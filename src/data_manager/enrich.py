@@ -33,7 +33,8 @@ def enrich_figi(conn=None, min_interval: float = 3.0) -> int:
         "SELECT ticker FROM universe WHERE figi IS NULL OR figi='' ORDER BY ticker"
     ).fetchall()]
     got = 0
-    for i in range(0, len(tickers), OPENFIGI_BATCH):
+    total = len(tickers)
+    for i in range(0, total, OPENFIGI_BATCH):
         batch = tickers[i:i + OPENFIGI_BATCH]
         body = [{"idType": "TICKER", "idValue": t, "exchCode": "US"} for t in batch]
         resp = _openfigi_with_retry(body, min_interval=min_interval)
@@ -45,8 +46,10 @@ def enrich_figi(conn=None, min_interval: float = 3.0) -> int:
                     (data[0].get("figi"), t),
                 )
                 got += 1
+        conn.commit()  # save progress incrementally (resumable)
+        if (i // OPENFIGI_BATCH) % 20 == 0:
+            print(f"[figi] {min(i+OPENFIGI_BATCH, total)}/{total} done, {got} figi", flush=True)
         time.sleep(min_interval)  # conservative pace
-    conn.commit()
     return got
 
 
