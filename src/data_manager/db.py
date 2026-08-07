@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS classifications (
     as_of    TEXT
 );
 
+CREATE TABLE IF NOT EXISTS snapshots (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    source     TEXT,
+    pulled_at  TEXT,
+    as_of      TEXT,
+    row_count  INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS fundamentals (
     ticker          TEXT,
     fiscal_year     INTEGER,

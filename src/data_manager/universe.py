@@ -3,6 +3,7 @@
 import datetime as dt
 
 from . import db
+from .providers.ishares import ISharesProvider
 from .providers.financialdatasets import FinancialDatasetsProvider
 from .providers.yfinance import YFinanceProvider
 
@@ -10,16 +11,36 @@ from .providers.yfinance import YFinanceProvider
 def update_universe(conn=None, provider=None) -> int:
     """Fetch R3000 constituents and store them in the universe table.
 
+    Defaults to the free ISharesProvider (IWV holdings). Stores ticker, name,
+    source, and — if the provider returns it — the sector classification.
+
     Returns the number of tickers stored.
     """
     conn = conn or db.connect()
-    provider = provider or FinancialDatasetsProvider()
+    provider = provider or ISharesProvider()
     constituents = provider.get_universe()
     now = dt.datetime.utcnow().isoformat()
     conn.executemany(
         "INSERT OR REPLACE INTO universe (ticker, name, source, added_at) "
         "VALUES (?, ?, ?, ?)",
         [(c["ticker"], c.get("name"), c.get("source"), now) for c in constituents],
+    )
+    # If the provider carries sector info (e.g. iShares), store classifications too.
+    if any(c.get("sector") for c in constituents):
+        today = dt.date.today().isoformat()
+        for c in constituents:
+            if c.get("sector"):
+                conn.execute(
+                    "INSERT OR REPLACE INTO classifications "
+                    "(ticker, sector, industry, as_of) VALUES (?, ?, NULL, ?)",
+                    (c["ticker"], c["sector"], today),
+                )
+    # Record a snapshot: pull time + the holdings' own as_of date + row count.
+    as_of = getattr(provider, "get_as_of_date", None)
+    as_of_date = as_of() if callable(as_of) else None
+    conn.execute(
+        "INSERT INTO snapshots (source, pulled_at, as_of, row_count) VALUES (?, ?, ?, ?)",
+        (provider.name, dt.datetime.utcnow().isoformat(), as_of_date, len(constituents)),
     )
     conn.commit()
     return len(constituents)

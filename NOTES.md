@@ -51,3 +51,11 @@ contact is a personal acquaintance — no refund requested.
 
     # Piotroski F-Score fundamentals (free)
     data-manager update-fundamentals --all
+
+## Universe source: iShares IWV (free) — 2026-08-07
+The R3000 universe now comes from the **free iShares IWV holdings CSV** (not the paid API).
+- Endpoint: `ishares.com/us/products/239714/ishares-russell-3000-etf/latest-holdings.csv`
+- Count: **2,589 unique tickers**, with ticker/name/sector/weight.
+- Provider: `data_manager.providers.ishares.ISharesProvider` (default for `update-universe`).
+- The paid financialdatasets.ai provider is kept as an alternative but not the default.
+- Saves credit AND gives sector classification for free.
