@@ -8,10 +8,15 @@ DEFAULT_DB = Path(os.environ.get("DATA_MANAGER_DB", "~/.prime/agent/data_manager
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS universe (
-    ticker   TEXT PRIMARY KEY,
-    name     TEXT,
-    source   TEXT,
-    added_at TEXT
+    ticker        TEXT PRIMARY KEY,
+    name          TEXT,
+    source        TEXT,
+    added_at      TEXT,
+    figi          TEXT,
+    cik           TEXT,
+    sic           TEXT,
+    sic_description TEXT,
+    lei           TEXT
 );
 
 CREATE TABLE IF NOT EXISTS prices (
@@ -67,5 +72,27 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+
+    try:
+        conn.execute("ALTER TABLE universe ADD COLUMN figi TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE universe ADD COLUMN cik TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE universe ADD COLUMN sic TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE universe ADD COLUMN sic_description TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE universe ADD COLUMN lei TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     conn.commit()
     return conn

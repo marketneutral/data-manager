@@ -11,6 +11,7 @@ from .universe import (
     update_fundamentals,
     universe_tickers,
 )
+from . import enrich
 
 
 def _tickers_from_args(args, conn):
@@ -27,6 +28,14 @@ def main(argv=None):
 
     p_universe = sub.add_parser("update-universe", help="Fetch R3000 constituents (financialdatasets.ai).")
     p_universe.add_argument("--db", default=None, help="SQLite DB path.")
+
+    p_enr_figi = sub.add_parser("enrich-figi", help="Enrich universe with FIGI (OpenFigi).")
+    p_enr_figi.add_argument("--db", default=None)
+    p_enr_cik = sub.add_parser("enrich-cik", help="Enrich universe with CIK (SEC).")
+    p_enr_cik.add_argument("--db", default=None)
+    p_enr_sic = sub.add_parser("enrich-sic", help="Enrich universe with SIC + LEI (SEC submissions).")
+    p_enr_sic.add_argument("--max", type=int, default=None, help="Cap number of companies.")
+    p_enr_sic.add_argument("--db", default=None)
 
     p_prices = sub.add_parser("update-prices", help="Fetch daily OHLCV prices (yfinance).")
     p_prices.add_argument("--ticker", default=None, help="Comma-separated tickers.")
@@ -48,7 +57,16 @@ def main(argv=None):
     args = parser.parse_args(argv)
     conn = db.connect(args.db)
 
-    if args.command == "update-universe":
+    if args.command == "enrich-figi":
+        n = enrich.enrich_figi(conn)
+        print(f"Enriched {n} tickers with FIGI.")
+    elif args.command == "enrich-cik":
+        n = enrich.enrich_cik(conn)
+        print(f"Enriched {n} tickers with CIK.")
+    elif args.command == "enrich-sic":
+        n = enrich.enrich_sic_lei(conn, max_tickers=args.max)
+        print(f"Enriched {n} tickers with SIC/LEI.")
+    elif args.command == "update-universe":
         n = update_universe(conn)
         print(f"Stored {n} universe tickers.")
     elif args.command == "update-prices":

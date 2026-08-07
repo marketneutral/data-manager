@@ -59,3 +59,46 @@ The R3000 universe now comes from the **free iShares IWV holdings CSV** (not the
 - Provider: `data_manager.providers.ishares.ISharesProvider` (default for `update-universe`).
 - The paid financialdatasets.ai provider is kept as an alternative but not the default.
 - Saves credit AND gives sector classification for free.
+
+## Security-master enrichment (replicable)
+
+The universe (security master) can be enriched with identifiers & classifications.
+All free. Each step is idempotent/resumable and can be re-run to update.
+
+Set up the repo env once:
+
+    cd ~/dev/data-manager
+    uv venv
+    uv pip install -e .
+
+Run from the repo (via the uv venv):
+
+    # 1. Universe (R3000) — free iShares IWV source
+    uv run data-manager update-universe
+
+    # 2. CIK from SEC company_tickers.json (fast, 1 request)
+    uv run data-manager enrich-cik
+
+    # 3. FIGI from OpenFigi (batches of 10; rate-limited ~2-5 req/sec, so
+    #    this takes ~10-15 min and is resumable — re-run to finish any stragglers)
+    uv run data-manager enrich-figi
+
+    # 4. SIC + SIC description + LEI from SEC submissions (1 request per company;
+    #    k rate-limited politely; ~25 min for the whole R3000)
+    uv run data-manager enrich-sic
+
+## Identifiers / classifications overview
+| Field | Source | Free |
+|---|---|---|
+| Ticker, Name, Sector (GICS) | iShares IWV holdings CSV | yes |
+| CIK | SEC company_tickers.json | yes |
+| FIGI | OpenFigi mapping API | yes |
+| SIC + SIC description | SEC submissions | yes |
+| LEI | SEC submissions | yes |
+| ISIN | not freely available (OpenFigi no longer returns it) | no |
+| NAICS | not freely available from SEC/OpenFigi; would need 10-K parsing | no |
+
+## Known API gotchas
+- **OpenFigi**: batch max 10 jobs/request (11+ returns 413); aggressive rate limit
+  (429 after ~10-25 req/min) — retry with backoff, pace ~3s between, make resumable.
+- **SEC**: requires a descriptive User-Agent header; be polite (~6-7 req/sec).
