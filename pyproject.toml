@@ -2,7 +2,15 @@
 name = "data-manager"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "httpx",
+    "python-dotenv",
+    "yfinance",
+    "pandas",
+]
+
+[project.scripts]
+data-manager = "data_manager.cli:main"
 
 [build-system]
 requires = ["hatchling"]
