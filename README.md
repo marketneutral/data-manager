@@ -1,8 +1,6 @@
 # data-manager
 
-Acquisition, storage, and point-in-time market data for the quant research stack —
-the data backbone for **Numerai Signals strategies**, the **risk model**, and the
-**stock-selection model**.
+Acquisition, storage, and point-in-time market data for the quant research stack.
 
 - **Universe:** Russell 3000 (2,589 tickers) from the free iShares IWV holdings CSV.
 - **Prices:** 10 years of **as-of OHLCV + an adjustment factor** (apply at query time).
