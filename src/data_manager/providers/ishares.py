@@ -40,7 +40,7 @@ class ISharesProvider(BaseProvider):
         import datetime as dt
         for ln in self._lines():
             if ln.strip().startswith("Fund Holdings as of"):
-                raw = ln.split(",", 1)[1].strip().strip('"')
+                raw = ln.split("Fund Holdings as of", 1)[1].strip().strip('"')
                 try:
                     return dt.datetime.strptime(raw, "%b %d, %Y").date().isoformat()
                 except ValueError:

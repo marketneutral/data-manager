@@ -26,7 +26,7 @@ def update_universe(conn=None, provider=None) -> int:
     conn = conn or db.connect()
     provider = provider or ISharesProvider()
     constituents = provider.get_universe()
-    now = dt.datetime.utcnow().isoformat()
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).isoformat()
     conn.executemany(
         "INSERT OR REPLACE INTO universe (ticker, name, source, added_at) "
         "VALUES (?, ?, ?, ?)",
@@ -47,7 +47,8 @@ def update_universe(conn=None, provider=None) -> int:
     as_of_date = as_of() if callable(as_of) else None
     conn.execute(
         "INSERT INTO snapshots (source, pulled_at, as_of, row_count) VALUES (?, ?, ?, ?)",
-        (provider.name, dt.datetime.utcnow().isoformat(), as_of_date, len(constituents)),
+        (provider.name, dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).isoformat(),
+         as_of_date, len(constituents)),
     )
     conn.commit()
     return len(constituents)
@@ -98,7 +99,12 @@ def update_classifications(tickers, conn=None, provider=None) -> int:
             "SELECT industry FROM classifications WHERE ticker=?", (ticker,)).fetchone()
         if have and have[0]:
             continue  # already has industry -> resumable
-        c = provider.get_classification(ticker)
+        try:
+            c = provider.get_classification(ticker)
+        except Exception as exc:
+            print(f"[classifications] {ticker}: {type(exc).__name__}: {exc}", flush=True)
+            time.sleep(3)
+            continue
         conn.execute(
             "INSERT OR REPLACE INTO classifications (ticker, sector, industry, as_of) "
             "VALUES (?, ?, ?, ?)",
