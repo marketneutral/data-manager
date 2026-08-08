@@ -102,7 +102,9 @@ def enrich_sic_lei(conn=None, max_tickers: int | None = None) -> int:
     """
     conn = conn or db.connect()
     rows = conn.execute(
-        "SELECT ticker, cik FROM universe WHERE cik IS NOT NULL ORDER BY ticker"
+        "SELECT ticker, cik FROM universe WHERE cik IS NOT NULL AND "
+        "(sic IS NULL OR sic='' OR sic_description IS NULL OR sic_description='') "
+        "ORDER BY ticker"
     ).fetchall()
     if max_tickers:
         rows = rows[:max_tickers]
@@ -111,7 +113,7 @@ def enrich_sic_lei(conn=None, max_tickers: int | None = None) -> int:
         ticker, cik = r["ticker"], r["cik"]
         try:
             resp = httpx.get(
-                SEC_SUBMISSIONS.format(cik=cik),
+                SEC_SUBMISSIONS.format(cik=int(cik)),
                 headers={"User-Agent": SEC_USER_AGENT},
                 timeout=60,
             )
@@ -125,6 +127,7 @@ def enrich_sic_lei(conn=None, max_tickers: int | None = None) -> int:
                 got += 1
         except Exception:
             pass
+        conn.commit()          # per-row commit: short lock, safe alongside other jobs
         time.sleep(SEC_DELAY)
     conn.commit()
     return got

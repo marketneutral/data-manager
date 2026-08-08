@@ -13,6 +13,7 @@ from .universe import (
     update_classifications,
     update_fundamentals,
     universe_tickers,
+    adjusted_prices,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "update_classifications",
     "update_fundamentals",
     "universe_tickers",
+    "adjusted_prices",
 ]
