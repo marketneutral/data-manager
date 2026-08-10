@@ -41,8 +41,8 @@ python3 make_spec_sheet.py            # regenerate data_quality_report.html
 providers/            data sources (pluggable, auto-selected)
   ishares.py            IWV holdings CSV  -> universe + sector
   financialdatasets.py  paid alternative (kept, not default)
-  yfinance.py           prices (10y)      -> as-of OHLCV + adjustment
-  fmp.py                fundamentals, ratios, quarterly, classification (FMP)
+  fmp.py                all data: as-traded OHLCV prices, fundamentals,
+                        ratios, quarterly statements, classifications (FMP)
 universe.py           orchestration: update_* functions (resumable, paced, resilient)
 enrich.py             security-master enrichment (FIGI/CIK/SIC/LEI)
 db.py                 SQLite schema + connection (WAL, busy_timeout)
@@ -51,9 +51,9 @@ make_spec_sheet.py    builds data_quality_report.html (coverage/missingness/time
 final_verify.py       end-of-pipeline assertions
 ```
 
-**Provider auto-selection:** `universe._default_data_provider()` returns **FMP** when
-`FMP_API_KEY` is present, else **yfinance**. Prices stay on yfinance (FMP's price
-history is tier-capped at ~5y on the current key); fundamentals/ratios/quarterly use FMP.
+**Provider:** FMP is the sole data provider (no yfinance). Prices are **as-traded**
+daily OHLCV (split jumps preserved) from FMP's non-split-adjusted EOD endpoint;
+fundamentals, TTM ratios, quarterly statements, and classifications also come from FMP.
 
 ---
 
@@ -79,7 +79,7 @@ history is tier-capped at ~5y on the current key); fundamentals/ratios/quarterly
 > This keeps raw prices intact and lets you choose adjustment convention per query.
 
 ### `classifications` (PK: ticker)
-sector (from IWV CSV), industry (yfinance/FMP), as_of.
+sector (from IWV CSV), industry (FMP), as_of.
 
 ### `fundamentals` — Piotroski F-Score (PK: ticker, fiscal_year)
 | col | meaning |
@@ -136,7 +136,7 @@ and **commit incrementally** (progress is visible in `status` and survives inter
 | iShares IWV CSV | universe + sector | free | — |
 | SEC (company_tickers, submissions) | CIK, SIC, LEI | free | polite ~6-7 req/s; needs User-Agent |
 | OpenFigi | FIGI | free | batch ≤10; ~2-5 req/s; 429 backoff |
-| yfinance | 10y prices | free | sequential only; YFRateLimitError on parallel |
+| **FMP** | as-traded prices, fundamentals, ratios, quarterly | paid (Premium) | 750 calls/min; resumable, paced |
 | **FMP** | fundamentals, ratios, quarterly, classification | **fixed cost** | **750 calls/min**; price history tier-capped ~5y |
 
 > **FMP cost rule:** fixed-cost plan — bulk runs are fine, but stay under the

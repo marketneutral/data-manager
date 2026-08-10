@@ -120,7 +120,7 @@ __id_rows__
 <table>
 <tr><th>Field</th><th class="num">Covered</th><th class="num">%</th></tr>
 <tr><td>Sector (from IWV CSV)</td><td class="num">__class_sector__</td><td class="num">__class_sector_pct__%</td></tr>
-<tr><td>Industry (yfinance)</td><td class="num">__class_industry__</td><td class="num">__class_industry_pct__%</td></tr>
+<tr><td>Industry (FMP)</td><td class="num">__class_industry__</td><td class="num">__class_industry_pct__%</td></tr>
 </table>
 <div class="note">Industry missing on delisted/futures-symbol rows (e.g. ESU6, MSFUT) — non-equity CSV artifacts.</div>
 </div>
@@ -172,7 +172,7 @@ __rat_rows_html__
 </div>
 
 <div class="foot">Pipeline: universe (iShares IWV) → identifiers (FIGI/CIK/SIC via OpenFigi+SEC) → classifications →
-prices (10y, resumable/paced) → fundamentals (Piotroski) → ratios (yfinance info). All local · status = live coverage snapshot.</div>
+prices (as-traded, resumable/paced) → fundamentals (Piotroski) → ratios (FMP TTM). All local · status = live coverage snapshot.</div>
 </body></html>"""
 
 def bar(pct):

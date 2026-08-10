@@ -1,7 +1,8 @@
-"""FMP provider — Financial Modeling Prep (replaces yfinance for fundamentals/ratios).
+"""FMP provider — Financial Modeling Prep (sole data provider).
 
-Key in FMP_API_KEY (see ~/.env). Note: price history is tier-capped (~5y on the
-current key) so prices stay on yfinance; FMP serves statements + ratios + profile.
+Key in FMP_API_KEY (see ~/.env). Serves everything: as-traded EOD prices
+(split jumps preserved, via the /stable/ non-split-adjusted endpoint), annual
+fundamentals, TTM ratios, quarterly statements, and profile/classifications.
 All methods best-effort; failures return {} / [] so callers skip quietly.
 """
 
@@ -24,10 +25,19 @@ def _key() -> str:
 
 
 def _get(path: str, **params) -> list | dict:
+    return _fetch("https://financialmodelingprep.com/api/v3/", path, **params)
+
+
+def _get_stable(path: str, **params) -> list:
+    """Fetch from FMP's /stable/ API family (e.g. non-split-adjusted EOD prices)."""
+    return _fetch("https://financialmodelingprep.com/stable/", path, **params)
+
+
+def _fetch(base: str, path: str, **params) -> list | dict:
     key = _key()
     if not key:
         return []
-    url = f"https://financialmodelingprep.com/api/v3/{path}?apikey={key}"
+    url = f"{base}{path}?apikey={key}"
     url += "".join(f"&{k}={v}" for k, v in params.items())
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "data-manager/0.2"})
@@ -63,27 +73,51 @@ class FMPProvider(BaseProvider):
     def get_universe(self):
         raise NotImplementedError("Use ISharesProvider for the universe.")
 
-    # ---- prices: as-of OHLCV + adjustment (adjClose/close). Tier-capped ~5y. ----
+    # ---- prices: AS-TRADED daily OHLCV + adjustment ----
+    # close comes from FMP's non-split-adjusted EOD endpoint (/stable/ family):
+    # raw prints with split jumps (e.g. TSLA 891.30 -> 296.07 at the 2022 3:1
+    # split). The endpoint mislabels the fields adjOpen/adjHigh/adjLow/adjClose —
+    # those ARE the as-traded values. adjustment = FMP's split+dividend-adjusted
+    # adjClose (from historical-price-full) / as-traded close, i.e. the same
+    # total-return factor semantics data-manager always used (Adj Close / Close).
     def get_prices(self, ticker: str, start: str, end: str) -> list[dict]:
-        h = _get("historical-price-full/" + ticker)
-        if not isinstance(h, dict):
+        # FMP stores class shares under dash variants (BRK.B -> BRK-B); the plain
+        # universe ticker (BRKB) returns an empty list. Try the dash variant when
+        # the plain one is empty (dots are rejected with HTTP 402, so not tried).
+        candidates = [ticker]
+        if "-" not in ticker and "." not in ticker and len(ticker) > 2:
+            candidates.append(ticker[:-1] + "-" + ticker[-1])   # BRKB -> BRK-B
+        raw = []
+        cand = ticker
+        for cand in candidates:
+            raw = _get_stable("historical-price-eod/non-split-adjusted", symbol=cand)
+            if isinstance(raw, list) and raw:
+                break
+        if not isinstance(raw, list) or not raw:
             return []
+        adj = _get("historical-price-full/" + cand)
+        adj_by_date = {}
+        if isinstance(adj, dict):
+            for r in adj.get("historical", []):
+                adj_by_date[str(r.get("date"))] = r
         rows = []
-        for r in reversed(h.get("historical", [])):
+        for r in raw:  # raw is newest-first; we sort at the end
             d = str(r.get("date", ""))
             if d < start or d > end:
                 continue
-            close = _num(r.get("close"))
-            adj = _num(r.get("adjClose"))
+            close = _num(r.get("adjClose"))  # as-traded close on this endpoint
+            ar = adj_by_date.get(d, {})
+            adj_close = _num(ar.get("adjClose"))
             rows.append({
                 "date": d,
-                "open": _num(r.get("open")),
-                "high": _num(r.get("high")),
-                "low": _num(r.get("low")),
+                "open": _num(r.get("adjOpen")),
+                "high": _num(r.get("adjHigh")),
+                "low": _num(r.get("adjLow")),
                 "close": close,
-                "adjustment": (adj / close) if (close and adj) else 1.0,
-                "volume": _num(r.get("volume")),
+                "adjustment": (adj_close / close) if (close and adj_close) else 1.0,
+                "volume": int(r["volume"]) if _num(r.get("volume")) is not None else None,
             })
+        rows.sort(key=lambda x: x["date"])
         return rows
 
     # ---- classification from profile ----

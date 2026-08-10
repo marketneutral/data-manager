@@ -51,16 +51,24 @@ def test_key_missing(monkeypatch):
 # --------------------------------------------------------------------------
 
 def test_fmp_get_prices_filters_and_adjusts(monkeypatch):
-    # FMP returns history newest-first; the provider reverses to ascending.
-    hist = {"historical": [
-        {"date": "2026-02-01", "open": 11, "high": 12, "low": 10,
-         "close": 11.5, "adjClose": 10.35, "volume": 3000},
-        {"date": "2026-01-03", "open": 10.5, "high": 12, "low": 10,
-         "close": 11, "adjClose": 9.9, "volume": 2000},
-        {"date": "2026-01-02", "open": 10, "high": 11, "low": 9,
-         "close": 10.5, "adjClose": 9.45, "volume": 1000},
+    # Non-split-adjusted EOD (as-traded) is newest-first and mislabels raw fields
+    # as adjOpen/adjHigh/adjLow/adjClose; the split-adjusted full history provides
+    # adjClose for the total-return factor. The provider merges both and sorts asc.
+    raw = [
+        {"date": "2026-02-01", "adjOpen": 11, "adjHigh": 12, "adjLow": 10,
+         "adjClose": 11.5, "volume": 3000},                       # outside window
+        {"date": "2026-01-03", "adjOpen": 10.5, "adjHigh": 12, "adjLow": 10,
+         "adjClose": 11, "volume": 2000},                          # as-traded close
+        {"date": "2026-01-02", "adjOpen": 10, "adjHigh": 11, "adjLow": 9,
+         "adjClose": 10.5, "volume": 1000},
+    ]
+    full = {"historical": [
+        {"date": "2026-02-01", "close": 11.5, "adjClose": 10.35, "volume": 3000},
+        {"date": "2026-01-03", "close": 11, "adjClose": 9.9, "volume": 2000},
+        {"date": "2026-01-02", "close": 10.5, "adjClose": 9.45, "volume": 1000},
     ]}
-    monkeypatch.setattr(fmp, "_get", lambda path, **p: hist)
+    monkeypatch.setattr(fmp, "_get_stable", lambda path, **p: raw)
+    monkeypatch.setattr(fmp, "_get", lambda path, **p: full)
     rows = fmp.FMPProvider().get_prices("AAPL", "2026-01-01", "2026-01-31")
     assert [r["date"] for r in rows] == ["2026-01-02", "2026-01-03"]
     assert rows[0]["close"] == 10.5
@@ -69,7 +77,7 @@ def test_fmp_get_prices_filters_and_adjusts(monkeypatch):
 
 
 def test_fmp_get_prices_empty(monkeypatch):
-    monkeypatch.setattr(fmp, "_get", lambda path, **p: [])
+    monkeypatch.setattr(fmp, "_get_stable", lambda path, **p: [])
     assert fmp.FMPProvider().get_prices("AAPL", "2026-01-01", "2026-01-31") == []
 
 
@@ -207,3 +215,20 @@ def test_fmp_get_ratios(monkeypatch):
     assert r["market_cap"] == 1000
     assert r["beta"] == 1.2
     assert r["forward_pe"] is None
+
+
+def test_fmp_get_prices_tries_dash_variant(monkeypatch):
+    calls = []
+
+    def fake_stable(path, **p):
+        calls.append(p["symbol"])
+        return [] if p["symbol"] == "BRKB" else [
+            {"date": "2026-01-02", "adjOpen": 10, "adjHigh": 11, "adjLow": 9,
+             "adjClose": 10.5, "volume": 1000}]
+
+    monkeypatch.setattr(fmp, "_get_stable", fake_stable)
+    monkeypatch.setattr(fmp, "_get", lambda path, **p: {"historical": [
+        {"date": "2026-01-02", "close": 10.5, "adjClose": 10.5, "volume": 1000}]})
+    rows = fmp.FMPProvider().get_prices("BRKB", "2026-01-01", "2026-01-31")
+    assert calls == ["BRKB", "BRK-B"]
+    assert rows[0]["close"] == 10.5

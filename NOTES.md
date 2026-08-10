@@ -168,3 +168,24 @@ Run from the repo (via the uv venv):
 - FMP = primary source now (fixed cost, within 750 calls/min); yfinance kept only for 10y prices
 - spec sheet: data_quality_report.html (coverage, missingness, timeframes) - OPEN
 - final_verify: OVERALL OK
+
+
+## FMP-ONLY CONVERSION (2026-08-08)
+- Removed all yfinance code: deleted `providers/yfinance.py` and its tests; dropped the
+  `yfinance` + `pandas` deps from pyproject.toml; removed yfinance references from
+  universe.py, cli.py, ishares.py, financialdatasets.py, scratch scripts, README.
+- `_default_data_provider()` now ALWAYS returns FMPProvider (no auto-selection).
+- Prices are now **as-traded daily OHLCV** (split jumps preserved) from FMP's
+  `/stable/historical-price-eod/non-split-adjusted` endpoint (VERIFIED on the Premium
+  key: TSLA 891.30 -> 296.07 at the 2022-08-25 3:1 split; SHOP 350.26 -> 33.05 at the
+  2022-06-29 10:1 split; as-traded volume too).
+  - GOTCHA: the endpoint mislabels raw fields adjOpen/adjHigh/adjLow/adjClose; those ARE
+    the as-traded values.
+  - GOTCHA: it only responds on the `/stable/` host prefix; `/api/v3/...non-split-adjusted`
+    returns [].
+  - `adjustment` = FMP split+dividend-adjusted adjClose (historical-price-full) / as-traded
+    close -> same Adj Close / Close semantics as before.
+- prices table was cleared and re-pulled from FMP (single source, no mixed provenance).
+  Consequence: FMP depth in this environment is ~5y (2021-08-10 -> now), so the 10y price
+  window from yfinance is retired until FMP deepens (email to FMP support sent re: Premium
+  30y depth).

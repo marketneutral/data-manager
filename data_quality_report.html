@@ -29,28 +29,28 @@
   .kpi .l { font-size:11px; color:var(--navy2); }
 </style></head><body>
 <h1>Data Manager — Data Spec Sheet</h1>
-<div class="sub">Generated 2026-08-08 10:28 · SQLite 637.8 MB · local only</div>
+<div class="sub">Generated 2026-08-10 07:49 · SQLite 637.8 MB · local only</div>
 
 <div class="kpis">
   <div class="kpi"><div class="v">2589</div><div class="l">Universe tickers</div></div>
-  <div class="kpi"><div class="v">2577</div><div class="l">Tickers w/ prices</div></div>
-  <div class="kpi"><div class="v">5,622,249</div><div class="l">Price rows (10y)</div></div>
+  <div class="kpi"><div class="v">2579</div><div class="l">Tickers w/ prices</div></div>
+  <div class="kpi"><div class="v">3,069,672</div><div class="l">Price rows (10y)</div></div>
   <div class="kpi"><div class="v">2574</div><div class="l">Tickers w/ F-scores</div></div>
   <div class="kpi"><div class="v">2589</div><div class="l">Tickers w/ ratios</div></div>
-  <div class="kpi"><div class="v">2574</div><div class="l">Tickers w/ quarterly</div></div>
+  <div class="kpi"><div class="v">2575</div><div class="l">Tickers w/ quarterly</div></div>
 </div>
 
 <h2>1 · Universe (security master)</h2>
 <table><tr><th>Source</th><th>Holding date (as-of)</th><th>Pulled</th><th class="num">Rows</th><th class="num">Unique</th></tr>
-<tr><td>ishares_</td><td>2026-08-06_</td><td>2026-08-07T21:28:43.952795_</td><td class="num">2592_</td><td class="num">2589</td></tr></table>
+<tr><td>ishares_</td><td>,"Aug 06, 2026_</td><td>2026-08-09T11:29:44.975807_</td><td class="num">2592_</td><td class="num">2589</td></tr></table>
 
 <h2>2 · Identifier coverage (missingness)</h2>
 <table>
 <tr><th>Identifier</th><th class="num">Have</th><th class="num">Missing</th><th style="width:44%">Coverage</th><th class="num">%</th></tr>
 <tr><td>figi</td><td class='num'>2570</td><td class='num'>19</td><td><span class="bar b-full" style="width:99.3%"></span></td><td class='num'>99.3% <span class="badge ok">OK</span></td></tr>
 <tr><td>cik</td><td class='num'>2563</td><td class='num'>26</td><td><span class="bar b-full" style="width:99.0%"></span></td><td class='num'>99.0% <span class="badge ok">OK</span></td></tr>
-<tr><td>sic</td><td class='num'>2561</td><td class='num'>28</td><td><span class="bar b-full" style="width:98.9%"></span></td><td class='num'>98.9% <span class="badge ok">OK</span></td></tr>
-<tr><td>sic_description</td><td class='num'>2561</td><td class='num'>28</td><td><span class="bar b-full" style="width:98.9%"></span></td><td class='num'>98.9% <span class="badge ok">OK</span></td></tr>
+<tr><td>sic</td><td class='num'>2556</td><td class='num'>33</td><td><span class="bar b-full" style="width:98.7%"></span></td><td class='num'>98.7% <span class="badge ok">OK</span></td></tr>
+<tr><td>sic_description</td><td class='num'>2556</td><td class='num'>33</td><td><span class="bar b-full" style="width:98.7%"></span></td><td class='num'>98.7% <span class="badge ok">OK</span></td></tr>
 <tr><td>lei</td><td class='num'>5</td><td class='num'>2584</td><td><span class="bar b-low" style="width:2.0%"></span></td><td class='num'>0.2% <span class="badge gap">LOW</span></td></tr>
 </table>
 <div class="note">LEI is an acknowledged gap: SEC only carries LEIs that companies registered (free source limit).</div>
@@ -59,8 +59,8 @@
 <div class="grid">
 <table>
 <tr><th>Field</th><th class="num">Covered</th><th class="num">%</th></tr>
-<tr><td>Sector (from IWV CSV)</td><td class="num">1302</td><td class="num">50.3%</td></tr>
-<tr><td>Industry (yfinance)</td><td class="num">1302</td><td class="num">50.3%</td></tr>
+<tr><td>Sector (from IWV CSV)</td><td class="num">2572</td><td class="num">99.3%</td></tr>
+<tr><td>Industry (FMP)</td><td class="num">2572</td><td class="num">99.3%</td></tr>
 </table>
 <div class="note">Industry missing on delisted/futures-symbol rows (e.g. ESU6, MSFUT) — non-equity CSV artifacts.</div>
 </div>
@@ -68,15 +68,15 @@
 <h2>4 · Prices — as-of OHLCV + adjustment (10-year window)</h2>
 <table>
 <tr><th>Metric</th><th class="num">Value</th></tr>
-<tr><td>Rows</td><td class="num">5,622,249</td></tr>
-<tr><td>Distinct tickers</td><td class="num">2577 / 2589 (99.5%)</td></tr>
-<tr><td>Date range</td><td class="num">2016-08-01 → 2026-08-07</td></tr>
-<tr><td>Tickers with full ~10y span (2016-08 → 2025+)</td><td class="num">1808</td></tr>
-<tr><td>Median days per ticker</td><td class="num">2181</td></tr>
-<tr><td>Adjustment factor range</td><td class="num">0.0844 → 1.0</td></tr>
-<tr><td>Missing (no price rows)</td><td class="num">12</td></tr>
+<tr><td>Rows</td><td class="num">3,069,672</td></tr>
+<tr><td>Distinct tickers</td><td class="num">2579 / 2589 (99.6%)</td></tr>
+<tr><td>Date range</td><td class="num">2021-08-10 → 2026-08-07</td></tr>
+<tr><td>Tickers with full ~10y span (2016-08 → 2025+)</td><td class="num">0</td></tr>
+<tr><td>Median days per ticker</td><td class="num">1190</td></tr>
+<tr><td>Adjustment factor range</td><td class="num">0.02 → 2880.0</td></tr>
+<tr><td>Missing (no price rows)</td><td class="num">10</td></tr>
 </table>
-<div class="note">Missing tickers sample: -, ADRO, AKE, ESU6, GTXI, HOLX, INH, MSFUT, P5N994, RTYU6, THRD, XTSLA. Excludes non-equity CSV artifacts; delisted names will never recover.</div>
+<div class="note">Missing tickers sample: -, ADRO, AKE, ESU6, GTXI, INH, MSFUT, P5N994, RTYU6, XTSLA. Excludes non-equity CSV artifacts; delisted names will never recover.</div>
 
 <h2>5 · Fundamentals — Piotroski F-Score (9 signals)</h2>
 <div class="grid">
@@ -104,29 +104,29 @@
 
 <h2>6 · Quarterly statements (FMP, ~10y)</h2>
 <table><tr><th>Metric</th><th class="num">Value</th></tr>
-<tr><td>Rows</td><td class="num">93,798</td></tr>
-<tr><td>Tickers covered</td><td class="num">2574 / 2589 (99.4%)</td></tr>
+<tr><td>Rows</td><td class="num">93,838</td></tr>
+<tr><td>Tickers covered</td><td class="num">2575 / 2589 (99.5%)</td></tr>
 <tr><td>Period range</td><td class="num">2006-06-30 → 2026-07-15</td></tr></table>
 <div class="note">Income/balance/cash-flow key items per fiscal quarter (FMP period=quarter, limit=40 ≈ 10y).</div>
 
-<h2>7 · Ratios — point-in-time snapshot (2026-08-08)</h2>
+<h2>7 · Ratios — point-in-time snapshot (2026-08-09)</h2>
 <div class="grid">
 <table><tr><th>Metric</th><th class="num">Value</th></tr>
-<tr><td>Snapshots</td><td class="num">2589</td></tr>
+<tr><td>Snapshots</td><td class="num">5178</td></tr>
 <tr><td>Tickers covered</td><td class="num">2589 / 2589 (100.0%)</td></tr></table>
 <table>
 <tr><th>Ratio field</th><th class="num">Missing</th><th style="width:42%">Populated</th></tr>
-<tr><td>trailing_pe</td><td class='num'>15</td><td><span class="bar b-full" style="width:99.0%"></span><span style='font-size:10.5px'>99%</span></td></tr>
-<tr><td>forward_pe</td><td class='num'>2589</td><td><span class="bar b-low" style="width:2.0%"></span><span style='font-size:10.5px'>0%</span></td></tr>
-<tr><td>price_to_book</td><td class='num'>15</td><td><span class="bar b-full" style="width:99.0%"></span><span style='font-size:10.5px'>99%</span></td></tr>
-<tr><td>roe</td><td class='num'>15</td><td><span class="bar b-full" style="width:99.0%"></span><span style='font-size:10.5px'>99%</span></td></tr>
-<tr><td>net_margin</td><td class='num'>2589</td><td><span class="bar b-low" style="width:2.0%"></span><span style='font-size:10.5px'>0%</span></td></tr>
-<tr><td>debt_to_equity</td><td class='num'>15</td><td><span class="bar b-full" style="width:99.0%"></span><span style='font-size:10.5px'>99%</span></td></tr>
-<tr><td>dividend_yield</td><td class='num'>22</td><td><span class="bar b-full" style="width:99.0%"></span><span style='font-size:10.5px'>99%</span></td></tr>
-<tr><td>beta</td><td class='num'>17</td><td><span class="bar b-full" style="width:99.0%"></span><span style='font-size:10.5px'>99%</span></td></tr>
+<tr><td>trailing_pe</td><td class='num'>50</td><td><span class="bar b-full" style="width:98.0%"></span><span style='font-size:10.5px'>98%</span></td></tr>
+<tr><td>forward_pe</td><td class='num'>5178</td><td><span class="bar b-low" style="width:2.0%"></span><span style='font-size:10.5px'>-100%</span></td></tr>
+<tr><td>price_to_book</td><td class='num'>50</td><td><span class="bar b-full" style="width:98.0%"></span><span style='font-size:10.5px'>98%</span></td></tr>
+<tr><td>roe</td><td class='num'>45</td><td><span class="bar b-full" style="width:98.0%"></span><span style='font-size:10.5px'>98%</span></td></tr>
+<tr><td>net_margin</td><td class='num'>5178</td><td><span class="bar b-low" style="width:2.0%"></span><span style='font-size:10.5px'>-100%</span></td></tr>
+<tr><td>debt_to_equity</td><td class='num'>45</td><td><span class="bar b-full" style="width:98.0%"></span><span style='font-size:10.5px'>98%</span></td></tr>
+<tr><td>dividend_yield</td><td class='num'>59</td><td><span class="bar b-full" style="width:98.0%"></span><span style='font-size:10.5px'>98%</span></td></tr>
+<tr><td>beta</td><td class='num'>38</td><td><span class="bar b-full" style="width:99.0%"></span><span style='font-size:10.5px'>99%</span></td></tr>
 </table>
 </div>
 
 <div class="foot">Pipeline: universe (iShares IWV) → identifiers (FIGI/CIK/SIC via OpenFigi+SEC) → classifications →
-prices (10y, resumable/paced) → fundamentals (Piotroski) → ratios (yfinance info). All local · status = live coverage snapshot.</div>
+prices (as-traded, resumable/paced) → fundamentals (Piotroski) → ratios (FMP TTM). All local · status = live coverage snapshot.</div>
 </body></html>

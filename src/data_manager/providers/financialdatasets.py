@@ -73,12 +73,12 @@ class FinancialDatasetsProvider(BaseProvider):
                 })
         return list(seen.values())
 
-    # Prices / classification / fundamentals are handled by yfinance (free).
+    # Prices / classification / fundamentals are handled by FMP.
     def get_prices(self, ticker, start, end):
-        raise NotImplementedError("Use YFinanceProvider for prices.")
+        raise NotImplementedError("Use FMPProvider for prices.")
 
     def get_classification(self, ticker):
-        raise NotImplementedError("Use YFinanceProvider for classifications.")
+        raise NotImplementedError("Use FMPProvider for classifications.")
 
     def get_fundamentals(self, ticker):
-        raise NotImplementedError("Use YFinanceProvider for fundamentals.")
+        raise NotImplementedError("Use FMPProvider for fundamentals.")

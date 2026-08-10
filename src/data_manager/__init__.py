@@ -1,7 +1,8 @@
 """data-manager: acquire, store, and update market data for the quant research stack.
 
-- Universe (R3000 constituents) via financialdatasets.ai (paid API).
-- Prices, classifications, and fundamentals (Piotroski F-Score) via yfinance (free).
+- Universe (R3000 constituents) via the free iShares IWV CSV.
+- Prices (as-traded, split jumps preserved), classifications, fundamentals
+  (Piotroski F-Score), ratios, and quarterly statements via FMP.
 
 Data is stored in a SQLite database (default ~/.prime/agent/data_manager.db).
 """

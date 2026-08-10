@@ -7,7 +7,6 @@ import pytest
 from data_manager import universe
 from data_manager.providers.base import BaseProvider
 from data_manager.providers.fmp import FMPProvider
-from data_manager.providers.yfinance import YFinanceProvider
 
 
 class FakeProvider(BaseProvider):
@@ -343,11 +342,5 @@ def test_universe_tickers_sorted(conn):
     assert universe.universe_tickers(conn=conn) == ["AAPL", "GOOG", "MSFT"]
 
 
-def test_default_data_provider_prefers_fmp(monkeypatch):
-    monkeypatch.setattr(universe, "_fmp_key", lambda: "secret")
+def test_default_data_provider_is_fmp():
     assert isinstance(universe._default_data_provider(), FMPProvider)
-
-
-def test_default_data_provider_falls_back_to_yfinance(monkeypatch):
-    monkeypatch.setattr(universe, "_fmp_key", lambda: "")
-    assert isinstance(universe._default_data_provider(), YFinanceProvider)

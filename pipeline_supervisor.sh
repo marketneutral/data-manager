@@ -1,5 +1,5 @@
 #!/bin/bash
-# Chains the yfinance stages: waits for prices to finish, then fundamentals, then ratios.
+# Chains the FMP stages: waits for prices to finish, then fundamentals, then ratios.
 cd /Users/jlarkin/dev/data-manager
 echo "[supervisor] waiting for prices (PIDs: $1 $2)..." >> pipeline.log
 while kill -0 $1 2>/dev/null || kill -0 $2 2>/dev/null; do

@@ -6,13 +6,12 @@ import time
 from . import db
 from .providers.ishares import ISharesProvider
 from .providers.financialdatasets import FinancialDatasetsProvider
-from .providers.yfinance import YFinanceProvider
-from .providers.fmp import FMPProvider, _key as _fmp_key
+from .providers.fmp import FMPProvider
 
 
 def _default_data_provider():
-    """FMP when an API key is present (cleaner fundamentals/ratios), else yfinance."""
-    return FMPProvider() if _fmp_key() else YFinanceProvider()
+    """FMP is the sole data provider (as-traded prices, fundamentals, ratios)."""
+    return FMPProvider()
 
 
 def update_universe(conn=None, provider=None) -> int:
@@ -27,9 +26,12 @@ def update_universe(conn=None, provider=None) -> int:
     provider = provider or ISharesProvider()
     constituents = provider.get_universe()
     now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).isoformat()
+    # Upsert that PRESERVES enrichment columns (figi/cik/sic/lei): a bare
+    # INSERT OR REPLACE would wipe them on every universe refresh.
     conn.executemany(
-        "INSERT OR REPLACE INTO universe (ticker, name, source, added_at) "
-        "VALUES (?, ?, ?, ?)",
+        "INSERT INTO universe (ticker, name, source, added_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(ticker) DO UPDATE SET "
+        "name=excluded.name, source=excluded.source, added_at=excluded.added_at",
         [(c["ticker"], c.get("name"), c.get("source"), now) for c in constituents],
     )
     # If the provider carries sector info (e.g. iShares), store classifications too.
@@ -37,9 +39,11 @@ def update_universe(conn=None, provider=None) -> int:
         today = dt.date.today().isoformat()
         for c in constituents:
             if c.get("sector"):
+                # Preserve any existing industry (update-classifications fills it).
                 conn.execute(
-                    "INSERT OR REPLACE INTO classifications "
-                    "(ticker, sector, industry, as_of) VALUES (?, ?, NULL, ?)",
+                    "INSERT INTO classifications (ticker, sector, industry, as_of) "
+                    "VALUES (?, ?, NULL, ?) ON CONFLICT(ticker) DO UPDATE SET "
+                    "sector=excluded.sector, as_of=excluded.as_of",
                     (c["ticker"], c["sector"], today),
                 )
     # Record a snapshot: pull time + the holdings' own as_of date + row count.
@@ -59,7 +63,7 @@ def update_prices(tickers, start, end, conn=None, provider=None, pace: float = 0
 
     Resumable: tickers whose stored data already covers `end` are skipped.
     Resilient: per-ticker errors are logged and skipped (rate limits, delisted).
-    Pacer: `pace` seconds between tickers to stay under yfinance limits.
+    Pacer: `pace` seconds between tickers to stay under FMP rate limits.
     Returns the number of price rows stored.
     """
     conn = conn or db.connect()
@@ -192,10 +196,10 @@ _RATIO_COLS = ["trailing_pe", "forward_pe", "price_to_book", "price_to_sales", "
 
 
 def update_ratios(tickers, conn=None, provider=None, pace: float = 0.5) -> int:
-    """Snapshot point-in-time fundamental ratios per ticker (yfinance info).
+    """Snapshot point-in-time fundamental ratios per ticker (FMP TTM).
 
     Resumable: skips tickers already snapshotted today. Resilient + paced like
-    the other yfinance jobs. Returns count of ratio rows stored.
+    the other FMP jobs. Returns count of ratio rows stored.
     """
     conn = conn or db.connect()
     provider = provider or _default_data_provider()
