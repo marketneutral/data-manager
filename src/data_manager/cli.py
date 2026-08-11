@@ -46,6 +46,9 @@ def main(argv=None):
     p_prices.add_argument("--all", action="store_true", help="All universe tickers.")
     p_prices.add_argument("--start", required=True, help="Start date YYYY-MM-DD.")
     p_prices.add_argument("--end", default=None, help="End date YYYY-MM-DD (default today).")
+    p_prices.add_argument("--force", action="store_true",
+                         help="refetch even if the ticker already covers --end "
+                              "(use to extend history depth with an earlier --start)")
     p_prices.add_argument("--db", default=None)
 
     p_class = sub.add_parser("update-classifications", help="Fetch sector/industry (FMP).")
@@ -110,7 +113,8 @@ def main(argv=None):
         if not tickers:
             print("No tickers. Pass --ticker or --all.")
             return 1
-        n = update_prices(tickers, args.start, end, conn)
+        n = update_prices(tickers, args.start, end, conn,
+                          force=getattr(args, "force", False))
         print(f"Stored {n} price rows for {len(tickers)} tickers.")
     elif args.command == "update-quarterly":
         tickers = _tickers_from_args(args, conn)

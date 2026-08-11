@@ -58,7 +58,8 @@ def update_universe(conn=None, provider=None) -> int:
     return len(constituents)
 
 
-def update_prices(tickers, start, end, conn=None, provider=None, pace: float = 0.25) -> int:
+def update_prices(tickers, start, end, conn=None, provider=None, pace: float = 0.25,
+                 force: bool = False) -> int:
     """Fetch daily OHLCV prices for the given tickers and store them.
 
     Resumable: tickers whose stored data already covers `end` are skipped.
@@ -71,7 +72,7 @@ def update_prices(tickers, start, end, conn=None, provider=None, pace: float = 0
     total = 0
     for ticker in tickers:
         row = conn.execute("SELECT MAX(date) FROM prices WHERE ticker=?", (ticker,)).fetchone()
-        if row and row[0] and row[0] >= end:
+        if not force and row and row[0] and row[0] >= end:
             continue  # already fully covered -> resume cheaply
         try:
             rows = provider.get_prices(ticker, start, end)

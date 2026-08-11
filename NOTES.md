@@ -207,3 +207,20 @@ Gotchas: the `/stable/` endpoint honors `from`/`to` but **ignores**
 the 27 ETF extras were repulled to `2016-08-01` (67,593 rows; XLC correctly
 starts at its 2018-06 inception). The stock universe was repulled the same way.
 
+
+## FMP price depth, round 2: 5,000-row cap & inception-depth chunking (2026-08-11)
+
+Even with `from`/`to`, a single request is capped at **~5,000 rows (~20
+years)** -- `from=1996` and `from=1985` both returned exactly 5,000 rows
+starting 2006-09-25. Getting older requires walking backward in chunks
+(`from=X&to=<oldest_so_far - 1d>`), which the API serves fine (AAPL back to
+1985; SPY to its 1993-01-29 inception).
+
+The provider now auto-chunks (`_paged_stable` / `_paged_v3_full` in
+providers/fmp.py), so any requested start depth is honored up to the plan
+ceiling / security inception. The 27 ETF extras were repulled with
+`--start 1993-01-01 --force` to **full inception depth** (162,686 rows:
+SPY 1993-01-29, QQQ 1999-03-10, IWM 2000-05-26, VXX 2009-01-30, ...).
+`--force` on `update-prices` refetches tickers that already cover `--end`
+(the default resume shortcut checks only the end of the range), which is how
+a depth upgrade re-pulls existing rows.

@@ -232,3 +232,52 @@ def test_fmp_get_prices_tries_dash_variant(monkeypatch):
     rows = fmp.FMPProvider().get_prices("BRKB", "2026-01-01", "2026-01-31")
     assert calls == ["BRKB", "BRK-B"]
     assert rows[0]["close"] == 10.5
+
+
+# --------------------------------------------------------------------------
+# deep-history chunking (~5,000-row/request cap)
+# --------------------------------------------------------------------------
+
+def _mk_rows(days, start="2026-01-01"):
+    from datetime import date, timedelta
+    d0 = date.fromisoformat(start)
+    return [{"date": (d0 - timedelta(days=i)).isoformat(),
+             "adjOpen": 10.0, "adjHigh": 11.0, "adjLow": 9.0,
+             "adjClose": 10.5, "volume": 1000} for i in range(days)]
+
+
+def test_paged_stable_chunks_past_the_5000_row_cap(monkeypatch):
+    calls = []
+
+    def fake_stable(path, **p):
+        calls.append(p)
+        frm, to = p["from"], p["to"]
+        # emulate the cap: serve at most 3000 rows per window, newest-first
+        from datetime import date, timedelta
+        d0 = date.fromisoformat(to)
+        rows = []
+        d = d0
+        for _ in range(3000):
+            rows.append({"date": d.isoformat(), "adjClose": 10.5})
+            if d.isoformat() <= frm:
+                break
+            d -= timedelta(days=1)
+        return rows
+
+    monkeypatch.setattr(fmp, "_get_stable", fake_stable)
+    out = fmp.FMPProvider()._paged_stable("historical-price-eod/non-split-adjusted",
+                                          "SPY", "1993-01-01", "2026-01-01", cap=3000)
+    assert len(calls) >= 4            # walked back in chunks
+    # merged result covers the full requested range without gaps
+    dates = [r["date"] for r in out]
+    assert dates[0] == "2026-01-01" and dates[-1] <= "1993-01-01"
+    assert len(set(dates)) == len(dates)          # deduped
+    assert 11500 < len(dates) < 12500             # ~12,053 calendar days back to 1993
+
+
+def test_get_prices_uses_paged_fetch_for_ranged_start(monkeypatch):
+    called = {}
+    monkeypatch.setattr(fmp, "_get_stable", lambda path, **p: _mk_rows(3))
+    monkeypatch.setattr(fmp, "_get", lambda path, **p: {"historical": _mk_rows(3)})
+    rows = fmp.FMPProvider().get_prices("AAPL", "2025-12-01", "2026-01-31")
+    assert rows and rows[0]["date"] <= "2026-01-31"

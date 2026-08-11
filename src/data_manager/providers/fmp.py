@@ -80,6 +80,55 @@ class FMPProvider(BaseProvider):
     # those ARE the as-traded values. adjustment = FMP's split+dividend-adjusted
     # adjClose (from historical-price-full) / as-traded close, i.e. the same
     # total-return factor semantics data-manager always used (Adj Close / Close).
+    # FMP's ~5,000-row/request cap (about 20 years) means very deep ranges must
+    # be fetched in backward chunks. Reported in NOTES.md (2026-08-11): one
+    # request reaches ~20y; chunking reaches inception / the plan ceiling.
+
+    def _paged_stable(self, path: str, symbol: str, start: str, end: str,
+                      cap: int = 5000) -> list:
+        """Stable-family fetch over [start, end] with automatic chunking.
+
+        Returns merged rows newest-first (as the API returns them). Boundary
+        overlaps between chunks are harmless: get_prices dedupes by date and
+        the store is INSERT OR REPLACE on (ticker, date).
+        """
+        from datetime import datetime, timedelta
+        merged: dict[str, dict] = {}
+        to = end
+        while True:
+            rows = _get_stable(path, **{"symbol": symbol, "from": start, "to": to})
+            if not isinstance(rows, list) or not rows:
+                break
+            for r in rows:
+                merged[str(r.get("date"))] = r
+            oldest = str(rows[-1].get("date", ""))
+            if len(rows) < cap or not oldest or oldest <= start:
+                break
+            to = (datetime.strptime(oldest, "%Y-%m-%d")
+                  - timedelta(days=1)).strftime("%Y-%m-%d")
+        return [merged[d] for d in sorted(merged, reverse=True)]
+
+    def _paged_v3_full(self, symbol: str, start: str, end: str,
+                       cap: int = 5000) -> dict:
+        """historical-price-full with automatic chunking (adjustment series)."""
+        from datetime import datetime, timedelta
+        merged: dict[str, dict] = {}
+        to = end
+        while True:
+            d = _get("historical-price-full/" + symbol, **{"from": start, "to": to})
+            hist = d.get("historical", []) if isinstance(d, dict) else []
+            if not hist:
+                break
+            for r in hist:
+                merged[str(r.get("date"))] = r
+            oldest = str(hist[-1].get("date", ""))
+            if len(hist) < cap or not oldest or oldest <= start:
+                break
+            to = (datetime.strptime(oldest, "%Y-%m-%d")
+                  - timedelta(days=1)).strftime("%Y-%m-%d")
+        return {"symbol": symbol,
+                "historical": [merged[d] for d in sorted(merged, reverse=True)]}
+
     def get_prices(self, ticker: str, start: str, end: str) -> list[dict]:
         # FMP stores class shares under dash variants (BRK.B -> BRK-B); the plain
         # universe ticker (BRKB) returns an empty list. Try the dash variant when
@@ -92,15 +141,19 @@ class FMPProvider(BaseProvider):
         # FMP's no-params default is ~the last 1,254 rows (~5y). The full plan
         # depth (>=10y) requires an explicit from/to; the /stable/ EOD endpoint
         # honors from/to (start_date/end_date are ignored).
-        daterange = {"from": start, "to": end} if start else {}
         for cand in candidates:
-            raw = _get_stable("historical-price-eod/non-split-adjusted",
-                              symbol=cand, **daterange)
+            if start:
+                raw = self._paged_stable("historical-price-eod/non-split-adjusted",
+                                         cand, start, end)
+            else:
+                raw = _get_stable("historical-price-eod/non-split-adjusted",
+                                  symbol=cand)
             if isinstance(raw, list) and raw:
                 break
         if not isinstance(raw, list) or not raw:
             return []
-        adj = _get("historical-price-full/" + cand, **daterange)
+        adj = (self._paged_v3_full(cand, start, end) if start
+               else _get("historical-price-full/" + cand))
         adj_by_date = {}
         if isinstance(adj, dict):
             for r in adj.get("historical", []):
