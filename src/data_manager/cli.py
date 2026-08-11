@@ -53,6 +53,14 @@ def main(argv=None):
                               "(use to extend history depth with an earlier --start)")
     p_prices.add_argument("--db", default=None)
 
+    p_master = sub.add_parser("update-master", help="Mirror Sharadar securities master (tickers table).")
+    p_master.add_argument("--ticker", default=None)
+    p_master.add_argument("--all", action="store_true")
+    p_master.add_argument("--db", default=None)
+    p_act = sub.add_parser("update-actions", help="Mirror Sharadar corporate actions (splits/dividends/delists).")
+    p_act.add_argument("--ticker", default=None)
+    p_act.add_argument("--all", action="store_true")
+    p_act.add_argument("--db", default=None)
     p_class = sub.add_parser("update-classifications", help="Fetch sector/industry (FMP).")
     p_class.add_argument("--ticker", default=None)
     p_class.add_argument("--all", action="store_true")
@@ -132,6 +140,20 @@ def main(argv=None):
             return 1
         n = update_ratios(tickers, conn)
         print(f"Stored {n} ratio snapshots.")
+    elif args.command == "update-master":
+        tickers = _tickers_from_args(args, conn)
+        if not tickers:
+            print("No tickers. Pass --ticker or --all.")
+            return 1
+        n = update_master(tickers, conn)
+        print(f"Securities master rows for {n} tickers.")
+    elif args.command == "update-actions":
+        tickers = _tickers_from_args(args, conn)
+        if not tickers:
+            print("No tickers. Pass --ticker or --all.")
+            return 1
+        n = update_actions(tickers, conn)
+        print(f"Corporate action rows: {n}.")
     elif args.command == "update-classifications":
         tickers = _tickers_from_args(args, conn)
         if not tickers:
