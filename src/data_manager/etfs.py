@@ -7,7 +7,8 @@ kept OUT of the `universe` table -- universe is the Russell 3000 stock list, and
 universe-wide jobs (fundamentals, ratios, quarterly, SEC enrichment) do not
 apply to funds.
 
-Refresh (10y, as of today):
+Refresh (10y, as of today; the explicit from/to range is what unlocks 10y --
+FMP's no-params default is only ~1,254 rows / ~5y):
     uv run data-manager update-prices --ticker "$(python - <<'EOF'
 from data_manager.etfs import etf_tickers; print(",".join(etf_tickers()))
 EOF

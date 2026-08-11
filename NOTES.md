@@ -189,3 +189,21 @@ Run from the repo (via the uv venv):
   Consequence: FMP depth in this environment is ~5y (2021-08-10 -> now), so the 10y price
   window from yfinance is retired until FMP deepens (email to FMP support sent re: Premium
   30y depth).
+
+## FMP price depth: ~5y default vs full range (2026-08-11)
+
+FMP's historical endpoints return **only the default window (~1,254 rows
+~= 5 years)** when called without range params — even with `timeseries=10000`.
+This was initially mistaken for a per-plan depth cap (Premium advertises
+"30 years"; a support email was drafted but never needed). The real mechanism:
+**explicit `from`/`to` unlocks the full plan depth.**
+
+- `/stable/historical-price-eod/non-split-adjusted?symbol=X&from=2016-08-01&to=2026-08-10`
+  -> 2,520 rows (10y as-traded)
+- `/api/v3/historical-price-full/X?from=2016-08-01&to=2026-08-10` -> same depth
+
+Gotchas: the `/stable/` endpoint honors `from`/`to` but **ignores**
+`start_date`/`end_date`. `update-prices` has sent the range since 2026-08-11;
+the 27 ETF extras were repulled to `2016-08-01` (67,593 rows; XLC correctly
+starts at its 2018-06 inception). The stock universe was repulled the same way.
+

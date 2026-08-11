@@ -89,13 +89,18 @@ class FMPProvider(BaseProvider):
             candidates.append(ticker[:-1] + "-" + ticker[-1])   # BRKB -> BRK-B
         raw = []
         cand = ticker
+        # FMP's no-params default is ~the last 1,254 rows (~5y). The full plan
+        # depth (>=10y) requires an explicit from/to; the /stable/ EOD endpoint
+        # honors from/to (start_date/end_date are ignored).
+        daterange = {"from": start, "to": end} if start else {}
         for cand in candidates:
-            raw = _get_stable("historical-price-eod/non-split-adjusted", symbol=cand)
+            raw = _get_stable("historical-price-eod/non-split-adjusted",
+                              symbol=cand, **daterange)
             if isinstance(raw, list) and raw:
                 break
         if not isinstance(raw, list) or not raw:
             return []
-        adj = _get("historical-price-full/" + cand)
+        adj = _get("historical-price-full/" + cand, **daterange)
         adj_by_date = {}
         if isinstance(adj, dict):
             for r in adj.get("historical", []):

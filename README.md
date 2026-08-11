@@ -19,8 +19,11 @@ industry = category) but NOT in `universe`, so universe-wide jobs (fundamentals,
 ratios, SEC enrichment) skip them. Refresh with
 `update-prices --ticker "$(uv run python -c 'from data_manager.etfs import etf_tickers; print(",".join(etf_tickers()))')" --start 2021-08-01`.
 
-> Note: the FMP plan caps historical depth at ~2021-08-10 for *all* tickers (stocks
-> included); the "10 years" in older docs is aspirational.`
+> Price depth: FMP's default (no-params) response is only the last ~1,254 rows
+> (~5 years) — this was mistaken for a plan cap. `update-prices` now always sends
+> an explicit `from`/`to` range, so `--start 2016-08-01` delivers the full 10
+> years of as-traded daily history (verified live 2026-08-11; sentinel SPY
+> 2016-08-01 close $216.94).`
 
 
 ---
