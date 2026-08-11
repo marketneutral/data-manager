@@ -11,6 +11,18 @@ Acquisition, storage, and point-in-time market data for the quant research stack
 
 Everything is **free or fixed-cost**, resumable, paced, and reproducible via the CLI.
 
+**ETF extras:** alongside the stock universe, `src/data_manager/etfs.py` maintains a
+manifest of tradable proxies (benchmarks SPY/QQQ/IWM/IWV, VXX for vol, the 11 SPDR
+sector funds, bond funds AGG/TLT/SHY/IEF/LQD/HYG, international EFA/EEM, GLD/USO,
+and the dollar fund UUP). They live in `prices`/`classifications` (sector `ETF`,
+industry = category) but NOT in `universe`, so universe-wide jobs (fundamentals,
+ratios, SEC enrichment) skip them. Refresh with
+`update-prices --ticker "$(uv run python -c 'from data_manager.etfs import etf_tickers; print(",".join(etf_tickers()))')" --start 2021-08-01`.
+
+> Note: the FMP plan caps historical depth at ~2021-08-10 for *all* tickers (stocks
+> included); the "10 years" in older docs is aspirational.`
+
+
 ---
 
 ## Quick start
