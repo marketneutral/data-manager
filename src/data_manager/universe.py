@@ -1,6 +1,7 @@
 """Orchestration: fetch data from providers and store into SQLite."""
 
 import datetime as dt
+import os
 import time
 
 from . import db
@@ -9,8 +10,71 @@ from .providers.financialdatasets import FinancialDatasetsProvider
 from .providers.fmp import FMPProvider
 
 
+
+# --------------------------------------------------------------------------
+# Sharadar extras: securities master + corporate actions (delisted-aware)
+# --------------------------------------------------------------------------
+
+_MASTER_COLS = ["permaticker", "ticker", "name", "exchange", "isdelisted",
+                "category", "cusips", "siccode", "sicsector", "sicindustry",
+                "figi", "famaindustry", "sector", "industry", "scalemarketcap",
+                "scalerevenue", "relatedtickers", "currency", "location",
+                "firstadded", "firstpricedate", "lastpricedate",
+                "firstquarter", "lastquarter", "secfilings", "companysite",
+                "lastupdated"]
+
+
+def update_master(tickers, conn=None, provider=None, pace: float = 0.3) -> int:
+    """Mirror the Sharadar securities-master rows (tickers table)."""
+    from .providers.sharadar import _fetch
+    conn = conn or db.connect()
+    total = 0
+    for t in tickers:
+        if conn.execute("SELECT 1 FROM securities_master WHERE permaticker IS NOT NULL "
+                        "AND ticker=?", (t,)).fetchone():
+            continue
+        rows = _fetch("tickers", ticker=t)
+        if not rows:
+            continue
+        r = rows[0]
+        conn.execute(
+            f"INSERT OR REPLACE INTO securities_master ({', '.join(_MASTER_COLS)}) "
+            f"VALUES ({', '.join('?' * len(_MASTER_COLS))})",
+            tuple(r.get(c) for c in _MASTER_COLS))
+        total += 1
+        conn.commit()
+        time.sleep(pace)
+    return total
+
+
+def update_actions(tickers, conn=None, provider=None, pace: float = 0.3) -> int:
+    """Mirror the Sharadar corporate-actions rows (splits/dividends/delists)."""
+    from .providers.sharadar import _fetch
+    conn = conn or db.connect()
+    total = 0
+    for t in tickers:
+        rows = _fetch("actions", ticker=t)
+        if not rows:
+            continue
+        for r in rows:
+            conn.execute(
+                "INSERT OR REPLACE INTO corporate_actions "
+                "(ticker, date, action, name, value, contraticker, contraname) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (t, r.get("date"), r.get("action"), r.get("name"),
+                 r.get("value"), r.get("contraticker"), r.get("contraname")))
+        total += len(rows)
+        conn.commit()
+        time.sleep(pace)
+    return total
+
+
 def _default_data_provider():
-    """FMP is the sole data provider (as-traded prices, fundamentals, ratios)."""
+    """Pick the data provider: FMP (default) or Sharadar via DATA_PROVIDER=sharadar."""
+    from .providers.fmp import FMPProvider
+    if os.environ.get("DATA_PROVIDER", "").lower() == "sharadar":
+        from .providers.sharadar import SharadarProvider
+        return SharadarProvider()
     return FMPProvider()
 
 

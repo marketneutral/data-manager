@@ -11,6 +11,8 @@ from .universe import (
     update_fundamentals,
     update_ratios,
     update_quarterly,
+    update_master,
+    update_actions,
     universe_tickers,
 )
 from . import enrich

@@ -65,6 +65,25 @@ CREATE TABLE IF NOT EXISTS ratios (
     PRIMARY KEY (ticker, as_of)
 );
 
+
+CREATE TABLE IF NOT EXISTS securities_master (
+    permaticker  TEXT PRIMARY KEY,
+    ticker       TEXT, name TEXT, exchange TEXT, isdelisted TEXT,
+    category     TEXT, cusips TEXT, siccode TEXT, sicsector TEXT,
+    sicindustry  TEXT, figi TEXT, famaindustry TEXT,
+    sector       TEXT, industry TEXT,
+    scalemarketcap TEXT, scalerevenue TEXT, relatedtickers TEXT,
+    currency     TEXT, location TEXT,
+    firstadded   TEXT, firstpricedate TEXT, lastpricedate TEXT,
+    firstquarter TEXT, lastquarter TEXT,
+    secfilings   TEXT, companysite TEXT, lastupdated TEXT
+);
+CREATE TABLE IF NOT EXISTS corporate_actions (
+    ticker TEXT, date TEXT, action TEXT, name TEXT, value TEXT,
+    contraticker TEXT, contraname TEXT,
+    PRIMARY KEY (ticker, date, action, value)
+);
+
 CREATE TABLE IF NOT EXISTS fundamentals (
     ticker          TEXT,
     fiscal_year     INTEGER,

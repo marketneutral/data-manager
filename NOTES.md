@@ -224,3 +224,48 @@ SPY 1993-01-29, QQQ 1999-03-10, IWM 2000-05-26, VXX 2009-01-30, ...).
 `--force` on `update-prices` refetches tickers that already cover `--end`
 (the default resume shortcut checks only the end of the range), which is how
 a depth upgrade re-pulls existing rows.
+
+## FMP -> Sharadar migration (2026-08-11)
+
+FMP is being cancelled; **Sharadar replaces it** (survivorship-bias-free to
+1998, includes delisted names). Why: FMP has no delisted coverage, only ~5y
+default / ~20y chunked price depth, no point-in-time fundamentals, and its
+sector/industry taxonomy is inconsistent. Sharadar covers prices (as-traded +
+adjusted, stocks AND funds), SF1 fundamentals (point-in-time AR/MR
+dimensions), a full securities master (`tickers`), corporate actions
+(`actions`), S&P500 constituents, and ~28y of history.
+
+New repo pieces:
+- `providers/sharadar.py` — same interface as FMPProvider (prices,
+  classification, fundamentals with identical F-score math, quarterly, ratios),
+  plus GICS sector mapping (Sharadar taxonomy -> 11 GICS; unmapped -> None,
+  fails closed). Swift: DATA_PROVIDER=sharadar.
+- Schema: `securities_master` (full tickers row) + `corporate_actions`.
+- CLI: `update-master`, `update-actions`; the standard update-* commands work
+  unchanged once DATA_PROVIDER=sharadar.
+- tests/test_providers_sharadar.py (synthetic fixtures; verified field names
+  live with the demo key 2026-08-11).
+
+VERIFIED LIVE (test key, 2026-08-11): tickers/stocks/fundamentals ARY/actions
+table shapes; AAPL sector='Technology' (-> Information Technology);
+firstpricedate 1986-01-01; SF1 has all Piotroski raw fields but NO fscore
+(precomputed by us). Demo key depth is ~5y and EXCLUDES the funds table.
+
+MIGRATION SEQUENCE (no data dead zone):
+1. Subscribe to Sharadar (direct a la carte, or Nasdaq bundle ~$99/mo) ->
+   SHARADAR_API_KEY in ~/.env.
+2. Verify: `DATA_PROVIDER=sharadar uv run data-manager update-prices
+   --ticker AAPL,SPY,VXX --start 2016-08-01`; check (a) VXX present in the
+   funds table, (b) AAPL/SPY closes 2021-2026 match the FMP-stored values
+   exactly, (c) `update-master --all` sector-mapping coverage fraction.
+3. URL/check: `update-prices --all --start 1996-01-01`, `update-classifications
+   --all`, `update-fundamentals --all`, `update-quarterly --all`,
+   `update-ratios --all`, `update-master --all`, `update-actions --all`.
+4. Point eqrm consumers at the migrated tables; re-run risk-model data-quality
+   checks (inclusion filter universe count should grow toward ~3,000 with
+   delisted names excluded by construction).
+5. ONLY THEN cancel FMP. Existing FMP-sourced rows stay in data_manager.db as
+   a reference; nothing is deleted.
+Watch-items: Sharadar forward_pe/beta absent (stored NULL); funds-table access
+needs the paid key; sector mapping must be reviewed against live sector values
+once subscribed.
