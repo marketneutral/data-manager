@@ -84,6 +84,48 @@ CREATE TABLE IF NOT EXISTS corporate_actions (
     PRIMARY KEY (ticker, date, action, value)
 );
 
+CREATE TABLE IF NOT EXISTS sp500_membership (
+    ticker TEXT, date TEXT, action TEXT, name TEXT,
+    contraticker TEXT, contraname TEXT, note TEXT,
+    PRIMARY KEY (ticker, date)
+);
+
+CREATE TABLE IF NOT EXISTS sf1 (
+    ticker TEXT, dimension TEXT, date TEXT, reportperiod TEXT,
+    fiscalperiod TEXT, calendardate TEXT, lastupdated TEXT,
+    revenue REAL, netinc REAL, netinccmn REAL, assets REAL, liabilities REAL,
+    equity REAL, cashneq REAL, ncfo REAL, capex REAL, fcf REAL,
+    marketcap REAL, ev REAL, pe REAL, pb REAL, ps REAL, price REAL,
+    eps REAL, dps REAL, divyield REAL, roe REAL, roa REAL, roic REAL,
+    grossmargin REAL, netmargin REAL, ebitda REAL, shareswa REAL,
+    shareswadil REAL, currentratio REAL, de REAL,
+    data BLOB,          -- zlib(gzip) of the FULL SF1 row (all ~112 indicator fields)
+    PRIMARY KEY (ticker, dimension, reportperiod)
+);
+CREATE INDEX IF NOT EXISTS idx_sf1_ticker_dim ON sf1(ticker, dimension);
+
+CREATE TABLE IF NOT EXISTS metrics (
+    ticker TEXT, as_of TEXT,
+    price REAL, beta1y REAL, beta5y REAL,
+    ma50d REAL, ma200d REAL, high52w REAL, low52w REAL,
+    return1y REAL, return5y REAL, returnytd REAL,
+    volume REAL, volumeavg1m REAL, volumeavg3m REAL,
+    dividendyieldtrailing REAL, dividendyieldforward REAL,
+    high5y REAL, low5y REAL,
+    PRIMARY KEY (ticker, as_of)
+);
+
+CREATE TABLE IF NOT EXISTS universe_pit (
+    as_of TEXT, ticker TEXT,
+    category TEXT, exchange TEXT, isdelisted TEXT,
+    sector TEXT, industry TEXT,
+    price REAL, mcap REAL,
+    dvol_avg REAL, dvol_days INTEGER,
+    firstpricedate TEXT, lastpricedate TEXT,
+    PRIMARY KEY (as_of, ticker)
+);
+CREATE INDEX IF NOT EXISTS idx_pit_asof ON universe_pit(as_of);
+
 CREATE TABLE IF NOT EXISTS fundamentals (
     ticker          TEXT,
     fiscal_year     INTEGER,
@@ -114,6 +156,10 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
 
     try:
         conn.execute("ALTER TABLE prices ADD COLUMN adjustment REAL")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute('ALTER TABLE securities_master ADD COLUMN "table" TEXT')
     except sqlite3.OperationalError:
         pass
     try:

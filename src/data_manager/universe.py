@@ -7,7 +7,6 @@ import time
 from . import db
 from .providers.ishares import ISharesProvider
 from .providers.financialdatasets import FinancialDatasetsProvider
-from .providers.fmp import FMPProvider
 
 
 
@@ -63,19 +62,48 @@ def update_actions(tickers, conn=None, provider=None, pace: float = 0.3) -> int:
                 "VALUES (?,?,?,?,?,?,?)",
                 (t, r.get("date"), r.get("action"), r.get("name"),
                  r.get("value"), r.get("contraticker"), r.get("contraname")))
-        total += len(rows)
+def update_sp500(conn=None, pace: float = 0.25) -> int:
+    """Mirror Sharadar S&P500 membership.
+
+    The unscoped sp500 pull is capped to ~1 year by the API; per-ticker pulls
+    return full membership history per member (e.g. AAPL back to 1982-11-30).
+    Stores both into sp500_membership (action: current|historical|added|removed).
+    """
+    from .providers.sharadar import _fetch
+    conn = conn or db.connect()
+    total = 0
+    rows = _fetch("sp500")
+    for r in rows:
+        conn.execute(
+            "INSERT OR REPLACE INTO sp500_membership "
+            "(ticker, date, action, name, contraticker, contraname, note) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (r.get("ticker"), r.get("date"), r.get("action"), r.get("name"),
+             r.get("contraticker"), r.get("contraname"), r.get("note")))
+    total += len(rows)
+    conn.commit()
+    members = sorted({r["ticker"] for r in rows if r.get("action") == "current"})
+    for t in members:
+        deep = _fetch("sp500", ticker=t)
+        if not deep:
+            continue
+        for r in deep:
+            conn.execute(
+                "INSERT OR REPLACE INTO sp500_membership "
+                "(ticker, date, action, name, contraticker, contraname, note) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (t, r.get("date"), r.get("action"), r.get("name"),
+                 r.get("contraticker"), r.get("contraname"), r.get("note")))
+        total += len(deep)
         conn.commit()
         time.sleep(pace)
     return total
 
 
 def _default_data_provider():
-    """Pick the data provider: FMP (default) or Sharadar via DATA_PROVIDER=sharadar."""
-    from .providers.fmp import FMPProvider
-    if os.environ.get("DATA_PROVIDER", "").lower() == "sharadar":
-        from .providers.sharadar import SharadarProvider
-        return SharadarProvider()
-    return FMPProvider()
+    """Sharadar is THE provider (FMP removed 2026-08-11; fresh start)."""
+    from .providers.sharadar import SharadarProvider
+    return SharadarProvider()
 
 
 def update_universe(conn=None, provider=None) -> int:
@@ -158,7 +186,7 @@ def update_prices(tickers, start, end, conn=None, provider=None, pace: float = 0
     return total
 
 
-def update_classifications(tickers, conn=None, provider=None) -> int:
+def update_classifications(tickers, conn=None, provider=None, force: bool = False) -> int:
     """Fetch sector/industry for the given tickers and store them."""
     conn = conn or db.connect()
     provider = provider or _default_data_provider()
@@ -166,7 +194,7 @@ def update_classifications(tickers, conn=None, provider=None) -> int:
     for ticker in tickers:
         have = conn.execute(
             "SELECT industry FROM classifications WHERE ticker=?", (ticker,)).fetchone()
-        if have and have[0]:
+        if not force and have and have[0]:
             continue  # already has industry -> resumable
         try:
             c = provider.get_classification(ticker)
@@ -184,11 +212,12 @@ def update_classifications(tickers, conn=None, provider=None) -> int:
     return count
 
 
-def update_fundamentals(tickers, conn=None, provider=None, pace: float = 0.5) -> int:
-    """Fetch annual fundamentals (Piotroski F-Score) for the given tickers.
+def update_fundamentals(tickers, conn=None, provider=None, pace: float = 0.5,
+                        force: bool = False) -> int:
+    """Fetch annual fundamentals (Piotroski F-Score) from Sharadar SF1.
 
-    Resumable: tickers already having any fundamentals rows are skipped.
-    Resilient: per-ticker errors are logged and skipped.
+    Resumable: tickers already having any fundamentals rows are skipped unless
+    force=True. Resilient: per-ticker errors are logged and skipped.
     Returns number of fundamental rows stored.
     """
     conn = conn or db.connect()
@@ -196,7 +225,7 @@ def update_fundamentals(tickers, conn=None, provider=None, pace: float = 0.5) ->
     total = 0
     for ticker in tickers:
         row = conn.execute("SELECT COUNT(*) FROM fundamentals WHERE ticker=?", (ticker,)).fetchone()
-        if row and row[0]:
+        if not force and row and row[0]:
             continue
         try:
             rows = provider.get_fundamentals(ticker)
@@ -260,11 +289,12 @@ _RATIO_COLS = ["trailing_pe", "forward_pe", "price_to_book", "price_to_sales", "
                "ev_to_ebitda", "beta", "shares_outstanding"]
 
 
-def update_ratios(tickers, conn=None, provider=None, pace: float = 0.5) -> int:
-    """Snapshot point-in-time fundamental ratios per ticker (FMP TTM).
+def update_ratios(tickers, conn=None, provider=None, pace: float = 0.5,
+                   force: bool = False) -> int:
+    """Snapshot point-in-time fundamental ratios per ticker (Sharadar SF1).
 
-    Resumable: skips tickers already snapshotted today. Resilient + paced like
-    the other FMP jobs. Returns count of ratio rows stored.
+    Resumable: skips tickers already snapshotted today unless force=True.
+    Resilient + paced. Returns count of ratio rows stored.
     """
     conn = conn or db.connect()
     provider = provider or _default_data_provider()
@@ -273,7 +303,7 @@ def update_ratios(tickers, conn=None, provider=None, pace: float = 0.5) -> int:
     for ticker in tickers:
         have = conn.execute(
             "SELECT COUNT(*) FROM ratios WHERE ticker=? AND as_of=?", (ticker, as_of)).fetchone()
-        if have and have[0]:
+        if not force and have and have[0]:
             continue
         try:
             r = provider.get_ratios(ticker)
@@ -299,14 +329,15 @@ _Q_COLS = ["net_income","revenue","gross_profit","operating_cash_flow","total_as
            "total_liabilities","current_assets","current_liabilities","shares_out","roa","cfo"]
 
 
-def update_quarterly(tickers, conn=None, provider=None, pace: float = 0.2) -> int:
-    """Fetch ~10y of quarterly statements (FMP). Resumable: skips tickers with rows."""
+def update_quarterly(tickers, conn=None, provider=None, pace: float = 0.2,
+                     force: bool = False) -> int:
+    """Fetch quarterly statements (Sharadar SF1). Resumable: skips tickers with rows unless force=True."""
     conn = conn or db.connect()
     provider = provider or _default_data_provider()
     total = 0
     for ticker in tickers:
         have = conn.execute("SELECT COUNT(*) FROM quarterly_statements WHERE ticker=?", (ticker,)).fetchone()[0]
-        if have:
+        if not force and have:
             continue
         try:
             rows = provider.get_quarterly(ticker)
@@ -330,3 +361,429 @@ def universe_tickers(conn=None) -> list[str]:
     conn = conn or db.connect()
     rows = conn.execute("SELECT ticker FROM universe ORDER BY ticker").fetchall()
     return [r["ticker"] for r in rows]
+
+# ============================================================================
+# WAREHOUSE MODE (2026-08-11): ALL US equities PIT from Sharadar.
+# Whole-table pulls where the API allows; size-aware batched pulls elsewhere.
+# ============================================================================
+
+_MASTER_ALL = _MASTER_COLS + ["table"]
+_SF1_DIMS = ["ARY", "MRY", "ARQ", "MRQ"]
+
+
+def master_stocks(conn, isdelisted=None) -> list[str]:
+    """All stock tickers from the securities master (table='stocks').
+
+    Honors DM_SHARD/DM_SHARDS env vars (parallel shards for the long jobs).
+    """
+    q = 'SELECT ticker FROM securities_master WHERE "table"=\'stocks\''
+    if isdelisted is not None:
+        q += f" AND isdelisted='{isdelisted}'"
+    rows = conn.execute(q).fetchall()
+    tickers = [r[0] for r in rows]
+    shards = int(os.environ.get("DM_SHARDS", "1"))
+    shard = int(os.environ.get("DM_SHARD", "0"))
+    if shards > 1:
+        tickers = [t for i, t in enumerate(tickers) if i % shards == shard]
+    return tickers
+
+
+def _page(table, limit: int, offset: int, **params) -> list[dict]:
+    from .providers.sharadar import _fetch
+    try:
+        return _fetch(table, limit=str(limit), offset=str(offset), **params)
+    except Exception:
+        return []
+
+
+def update_master_all(conn=None, pace: float = 0.2) -> int:
+    """Whole-table mirror of the Sharadar tickers master (stocks + funds only)."""
+    from .providers.sharadar import _fetch
+    conn = conn or db.connect()
+    total = 0
+    offset = 0
+    while True:
+        rows = _fetch("tickers", limit="100000", offset=str(offset))
+        if not rows:
+            break
+        keep = [r for r in rows if r.get("table") in ("stocks", "funds")]
+        cols = ", ".join('"table"' if c == "table" else c for c in _MASTER_ALL)
+        for r in keep:
+            conn.execute(
+                f"INSERT OR REPLACE INTO securities_master ({cols}) "
+                f"VALUES ({', '.join('?' * len(_MASTER_ALL))})",
+                tuple(r.get(c) for c in _MASTER_ALL))
+        total += len(keep)
+        conn.commit()
+        if len(rows) < 100000:
+            break
+        offset += len(rows)
+        time.sleep(pace)
+    return total
+
+
+def update_actions_all(conn=None, pace: float = 0.2) -> int:
+    """Whole-table mirror of the Sharadar corporate-actions table."""
+    from .providers.sharadar import _fetch
+    conn = conn or db.connect()
+    total = 0
+    offset = 0
+    while True:
+        rows = _fetch("actions", limit="50000", offset=str(offset))
+        if not rows:
+            break
+        conn.executemany(
+            "INSERT OR REPLACE INTO corporate_actions "
+            "(ticker, date, action, name, value, contraticker, contraname) "
+            "VALUES (?,?,?,?,?,?,?)",
+            [(r.get("ticker"), r.get("date"), r.get("action"), r.get("name"),
+              r.get("value"), r.get("contraticker"), r.get("contraname")) for r in rows])
+        total += len(rows)
+        conn.commit()
+        if len(rows) < 50000:
+            break
+        offset += len(rows)
+        time.sleep(pace)
+    return total
+
+
+def update_metrics_all(conn=None, pace: float = 0.2) -> int:
+    """Whole-table mirror of the Sharadar metrics snapshot (latest per ticker)."""
+    from .providers.sharadar import _fetch
+    conn = conn or db.connect()
+    total = 0
+    offset = 0
+    while True:
+        rows = _fetch("metrics", limit="50000", offset=str(offset))
+        if not rows:
+            break
+        conn.executemany(
+            "INSERT OR REPLACE INTO metrics "
+            "(ticker, as_of, price, beta1y, beta5y, ma50d, ma200d, high52w, low52w,"
+            " return1y, return5y, returnytd, volume, volumeavg1m, volumeavg3m,"
+            " dividendyieldtrailing, dividendyieldforward, high5y, low5y) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [(r.get("ticker"), r.get("date"),
+              _numf(r.get("price")), _numf(r.get("beta1y")), _numf(r.get("beta5y")),
+              _numf(r.get("ma50d")), _numf(r.get("ma200d")), _numf(r.get("high52w")),
+              _numf(r.get("low52w")), _numf(r.get("return1y")), _numf(r.get("return5y")),
+              _numf(r.get("returnytd")), _numf(r.get("volume")),
+              _numf(r.get("volumeavg1m")), _numf(r.get("volumeavg3m")),
+              _numf(r.get("dividendyieldtrailing")), _numf(r.get("dividendyieldforward")),
+              _numf(r.get("high5y")), _numf(r.get("low5y"))) for r in rows])
+        total += len(rows)
+        conn.commit()
+        if len(rows) < 50000:
+            break
+        offset += len(rows)
+        time.sleep(pace)
+    return total
+
+
+def _numf(v):
+    try:
+        if v is None or v == "" or v == "N/A":
+            return None
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+# ---- SF1 full mirror, batched per dimension (ticker=batch supported) ----
+_SF1_TYPED = ["revenue", "netinc", "netinccmn", "assets", "liabilities", "equity",
+              "cashneq", "ncfo", "capex", "fcf", "marketcap", "ev", "pe", "pb",
+              "ps", "price", "eps", "dps", "divyield", "roe", "roa", "roic",
+              "grossmargin", "netmargin", "ebitda", "shareswa", "shareswadil",
+              "currentratio", "de"]
+
+# rough rows-per-ticker estimates per dimension (from live probes)
+_EST = {"ARY": 38, "MRY": 40, "ARQ": 140, "MRQ": 145}
+
+
+def _sf1_batches(tickers: list[str], dimension: str) -> list[list[str]]:
+    """Batches for the fundamentals endpoint: server caps ~30 tickers/request."""
+    n = 25
+    return [tickers[i:i + n] for i in range(0, len(tickers), n)]
+
+
+def update_sf1_all(conn=None, dimensions=None, pace: float = 0.15) -> int:
+    """Full SF1 mirror (all dimensions, full history) via batched pulls."""
+    from .providers.sharadar import _fetch
+    import json, zlib
+    conn = conn or db.connect()
+    dims = dimensions or _SF1_DIMS
+    total = 0
+    tickers = master_stocks(conn)
+    for dim in dims:
+        for batch in _sf1_batches(tickers, dim):
+            rows = _fetch("fundamentals", ticker=",".join(batch), dimension=dim)
+            if not rows:
+                continue
+            for r in rows:
+                blob = zlib.compress(json.dumps(r).encode("utf-8"))
+                conn.execute(
+                    "INSERT OR REPLACE INTO sf1 "
+                    "(ticker, dimension, date, reportperiod, fiscalperiod, calendardate,"
+                    " lastupdated, revenue, netinc, netinccmn, assets, liabilities,"
+                    " equity, cashneq, ncfo, capex, fcf, marketcap, ev, pe, pb, ps,"
+                    " price, eps, dps, divyield, roe, roa, roic, grossmargin,"
+                    " netmargin, ebitda, shareswa, shareswadil, currentratio, de, data)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
+                    "?,?,?,?,?,?,?,?,?,?)",
+                    (r.get("ticker"), dim, r.get("date"), r.get("reportperiod"),
+                     r.get("fiscalperiod"), r.get("calendardate"), r.get("lastupdated"),
+                     *[_numf(r.get(c)) for c in _SF1_TYPED], blob))
+            total += len(rows)
+            conn.commit()
+            time.sleep(pace)
+    return total
+
+
+# ---- prices for ALL stocks, size-aware batched (ticker=A,B,... supported) ----
+def _price_batches(tickers: list[str], start: str, end: str, conn) -> list[list[str]]:
+    """Batch by estimated rows so each response stays under the ~7MB cap."""
+    est = {}
+    for t in tickers:
+        row = conn.execute(
+            'SELECT firstpricedate, lastpricedate FROM securities_master WHERE ticker=?', (t,)).fetchone()
+        first = (row[0] if row and row[0] else start)
+        last = (row[1] if row and row[1] else end) or end
+        lo, hi = max(first, start), min(last, end)
+        est[t] = 0 if lo >= hi else max(1, int((dt.date.fromisoformat(hi) - dt.date.fromisoformat(lo)).days * 5 / 7))
+    batches, cur, cur_n = [], [], 0
+    for t in tickers:
+        if cur_n + est[t] > 30000 or len(cur) >= 28:
+            batches.append(cur); cur, cur_n = [], 0
+        cur.append(t); cur_n += est[t]
+    if cur:
+        batches.append(cur)
+    return batches
+
+
+# the stocks endpoint truncates oversized responses at ~50,000 rows (newest
+# kept); anything above that must be pulled in smaller batches and verified
+_RESP_CAP = 50000
+
+
+def _fetch_prices_batch(tickers, est, start, end, pace):
+    """Fetch a price batch, halving until it fits under the 50k response cap."""
+    from .providers.sharadar import _fetch, parse_prices
+    est_n = sum(est[t] for t in tickers)
+    if est_n > _RESP_CAP * 1.05:
+        mid = len(tickers) // 2
+        return (_fetch_prices_batch(tickers[:mid], est, start, end, pace) +
+                _fetch_prices_batch(tickers[mid:], est, start, end, pace))
+    rows = _fetch("stocks", ticker=",".join(tickers))
+    if len(rows) >= _RESP_CAP - 10 and est_n > _RESP_CAP - 100:
+        mid = len(tickers) // 2
+        return (_fetch_prices_batch(tickers[:mid], est, start, end, pace) +
+                _fetch_prices_batch(tickers[mid:], est, start, end, pace))
+    return rows
+
+
+def update_prices_all_stocks(conn=None, start: str = "1996-01-01", end: str = None,
+                             pace: float = 0.2) -> int:
+    """As-traded OHLCV for EVERY stock in the master (incl. delisted).
+
+    NOTE: the stocks endpoint serves at most the last ~7,196 rows / ~28.6y per
+    ticker (back to 1998) -- earlier firstpricedate metadata is not fetchable.
+    Batches are halved under the ~50k-row response cap and every ticker's
+    coverage is verified against the window estimate (short ones refetched
+    individually).
+    """
+    from .providers.sharadar import _fetch, parse_prices
+    conn = conn or db.connect()
+    end = end or dt.date.today().isoformat()
+    tickers = master_stocks(conn)
+    est = {}
+    for t in tickers:
+        row = conn.execute(
+            'SELECT firstpricedate, lastpricedate FROM securities_master WHERE ticker=?', (t,)).fetchone()
+        first = (row[0] if row and row[0] else start)
+        last = (row[1] if row and row[1] else end) or end
+        lo, hi = max(first, start), min(last, end)
+        est[t] = 0 if lo >= hi else max(1, int((dt.date.fromisoformat(hi) - dt.date.fromisoformat(lo)).days * 5 / 7))
+    total = 0
+    for batch in _price_batches(tickers, start, end, conn):
+        rows = _fetch_prices_batch(batch, est, start, end, pace)
+        counts: dict[str, int] = {}
+        entries = parse_prices(rows, start, end)
+        for e in entries:
+            counts[e["ticker"]] = counts.get(e["ticker"], 0) + 1
+        conn.executemany(
+            "INSERT OR REPLACE INTO prices "
+            "(ticker, date, open, high, low, close, volume, adjustment) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            [(e["ticker"], e["date"], e["open"], e["high"], e["low"],
+              e["close"], e["volume"], e["adjustment"]) for e in entries])
+        total += len(entries)
+        conn.commit()
+        # per-ticker coverage: a ticker with fewer rows than its window estimate
+        # was truncated -> refetch it alone (single-ticker pulls are complete)
+        for t in batch:
+            want = min(est[t], 7196)
+            if want > 50 and counts.get(t, 0) < want - 20:
+                sub = parse_prices(_fetch("stocks", ticker=t), start, end)
+                conn.executemany(
+                    "INSERT OR REPLACE INTO prices "
+                    "(ticker, date, open, high, low, close, volume, adjustment) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    [(t, e["date"], e["open"], e["high"], e["low"], e["close"], e["volume"], e["adjustment"])
+                     for e in sub])
+                total += len(sub)
+                conn.commit()
+                time.sleep(pace)
+        time.sleep(pace)
+    return total
+
+
+# ---- local derivations from the sf1 mirror (zero remote requests) ----
+def _hydrate_sf1(conn, ticker: str, dimension: str) -> list[dict]:
+    import json, zlib
+    rows = conn.execute(
+        "SELECT data FROM sf1 WHERE ticker=? AND dimension=? ORDER BY calendardate",
+        (ticker, dimension)).fetchall()
+    out = []
+    for (blob,) in rows:
+        if blob:
+            out.append(json.loads(zlib.decompress(blob).decode("utf-8")))
+    return out
+
+
+def build_piotroski(conn=None) -> int:
+    from .providers.sharadar import fscore_from_rows
+    conn = conn or db.connect()
+    total = 0
+    for t in master_stocks(conn):
+        rows = _hydrate_sf1(conn, t, "ARY")
+        if not rows:
+            continue
+        fund = fscore_from_rows(rows)
+        for f in fund:
+            conn.execute(
+                "INSERT OR REPLACE INTO fundamentals "
+                "(ticker, fiscal_year, roa, cfo, d_roa, accruals, d_leverage,"
+                " d_liquidity, equity_issuance, d_gross_margin, d_asset_turnover, f_score)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (t, f["fiscal_year"], f.get("roa"), f.get("cfo"), f.get("d_roa"),
+                 f.get("accruals"), f.get("d_leverage"), f.get("d_liquidity"),
+                 f.get("equity_issuance"), f.get("d_gross_margin"),
+                 f.get("d_asset_turnover"), f.get("f_score")))
+        total += len(fund)
+        conn.commit()
+    return total
+
+
+def build_quarterly(conn=None) -> int:
+    from .providers.sharadar import quarterly_from_rows
+    conn = conn or db.connect()
+    total = 0
+    for t in master_stocks(conn):
+        rows = _hydrate_sf1(conn, t, "ARQ")
+        if not rows:
+            continue
+        q = quarterly_from_rows(rows)
+        for r in q:
+            conn.execute(
+                "INSERT OR REPLACE INTO quarterly_statements "
+                "(ticker, period, net_income, revenue, gross_profit, operating_cash_flow,"
+                " total_assets, total_liabilities, current_assets, current_liabilities,"
+                " shares_out, roa, cfo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (t, r["period"], r["net_income"], r["revenue"], r["gross_profit"],
+                 r["operating_cash_flow"], r["total_assets"], r["total_liabilities"],
+                 r["current_assets"], r["current_liabilities"], r["shares_out"],
+                 r["roa"], r["cfo"]))
+        total += len(q)
+        conn.commit()
+    return total
+
+
+def build_ratios(conn=None) -> int:
+    from .providers.sharadar import ratios_from_row
+    conn = conn or db.connect()
+    as_of = dt.date.today().isoformat()
+    total = 0
+    for t in master_stocks(conn):
+        rows = _hydrate_sf1(conn, t, "MRY")
+        if not rows:
+            continue
+        latest = sorted(rows, key=lambda r: str(r.get("calendardate", "")))[-1]
+        r = ratios_from_row(latest)
+        if not r:
+            continue
+        conn.execute(
+            "INSERT OR REPLACE INTO ratios "
+            "(ticker, as_of, trailing_pe, forward_pe, price_to_book, price_to_sales,"
+            " roe, roa, net_margin, gross_margin, operating_margin, debt_to_equity,"
+            " current_ratio, dividend_yield, market_cap, enterprise_value,"
+            " ev_to_ebitda, beta, shares_outstanding) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (t, as_of, r.get("trailing_pe"), r.get("forward_pe"), r.get("price_to_book"),
+             r.get("price_to_sales"), r.get("roe"), r.get("roa"), r.get("net_margin"),
+             r.get("gross_margin"), r.get("operating_margin"), r.get("debt_to_equity"),
+             r.get("current_ratio"), r.get("dividend_yield"), r.get("market_cap"),
+             r.get("enterprise_value"), r.get("ev_to_ebitda"), r.get("beta"),
+             r.get("shares_outstanding")))
+        total += 1
+        conn.commit()
+    return total
+
+
+# ---- PIT universe construction ----
+_PIT_DEFAULT_TYPES = ("Domestic Common Stock", "Domestic Common Stock Primary Class",
+                      "Domestic Common Stock Secondary Class")
+
+
+def build_universe_pit(conn=None, as_of=None, min_price: float = 2.0,
+                       min_mcap: float = 300_000_000.0, min_dvol: float = 5_000_000.0,
+                       lookback: int = 20, min_dvol_days: int = 10,
+                       max_quote_age: int = 10, types=_PIT_DEFAULT_TYPES) -> int:
+    """Construct a point-in-time investable universe from master+prices+sf1.
+
+    As of `as_of`: a stock is investable iff it traded recently enough, its last
+    as-traded close >= min_price, trailing avg $volume >= min_dvol over the
+    lookback, and PIT market cap (close x latest as-reported shares) >= min_mcap.
+    """
+    conn = conn or db.connect()
+    as_of = as_of or dt.date.today().isoformat()
+    placeholders = ",".join("?" * len(types))
+    cands = conn.execute(
+        "SELECT ticker, category, exchange, isdelisted, sector, industry,"
+        " firstpricedate, lastpricedate FROM securities_master"
+        ' WHERE "table"=\'stocks\' AND category IN (' + placeholders + ")",
+        list(types)).fetchall()
+    n = 0
+    LIMIT = lookback + 5
+    for ticker, category, exchange, isdelisted, sector, industry, first, last in cands:
+        if isdelisted == "Y" and last and last < as_of:
+            continue  # delisted before the as-of date
+        quotes = conn.execute(
+            "SELECT date, close, volume FROM prices WHERE ticker=? AND date<=?"
+            " ORDER BY date DESC LIMIT ?", (ticker, as_of, LIMIT)).fetchall()
+        if not quotes:
+            continue
+        last_date, last_close, _ = quotes[0]
+        if not last_close or last_close < min_price:
+            continue
+        age = (dt.date.fromisoformat(as_of) - dt.date.fromisoformat(last_date)).days
+        if age > max_quote_age:
+            continue
+        dvol = [c * v for d, c, v in quotes if c and v]
+        dvol_days = len(dvol)
+        if dvol_days < min_dvol_days or (sum(dvol) / dvol_days) < min_dvol:
+            continue
+        sh = conn.execute(
+            "SELECT shareswa FROM sf1 WHERE ticker=? AND dimension IN ('ARQ','ARY')"
+            " AND date<=? ORDER BY date DESC LIMIT 1", (ticker, as_of)).fetchone()
+        mcap = last_close * sh[0] if (sh and sh[0]) else None
+        if mcap is None or mcap < min_mcap:
+            continue
+        conn.execute(
+            "INSERT OR REPLACE INTO universe_pit "
+            "(as_of, ticker, category, exchange, isdelisted, sector, industry,"
+            " price, mcap, dvol_avg, dvol_days, firstpricedate, lastpricedate)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (as_of, ticker, category, exchange, isdelisted, sector, industry,
+             last_close, mcap, sum(dvol) / dvol_days, dvol_days, first, last))
+        n += 1
+        conn.commit()
+    return n

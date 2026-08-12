@@ -69,6 +69,24 @@ def test_price_table_routing_via_master(monkeypatch):
     assert p._price_table("VXX") == "funds"
 
 
+def test_get_prices_as_traded_with_split_factor(monkeypatch):
+    # AAPL 2016-08-01 shape: Sharadar `close` is split-adjusted (4:1 of the
+    # 2020 split), `closeunadj` is the as-traded close. As-traded OHLC must be
+    # recovered by scaling with closeunadj/close; adjustment = closeadj/closeunadj.
+    csv_text = "date,open,high,low,close,closeunadj,ticker,volume,closeadj,lastupdated\n" \
+               "2016-08-01,26.102,26.538,26.102,26.512,106.05,AA,1000,24.12,\n"
+    monkeypatch.setattr(S, "_fetch", lambda table, **p: _rows(csv_text))
+    rows = S.SharadarProvider().get_prices("AA", "2016-08-01", "2016-08-01")
+    assert len(rows) == 1
+    r = rows[0]
+    assert r["close"] == pytest.approx(106.05)
+    assert r["open"] == pytest.approx(26.102 * (106.05 / 26.512))
+    assert r["high"] == pytest.approx(26.538 * (106.05 / 26.512))
+    assert r["low"] == pytest.approx(26.102 * (106.05 / 26.512))
+    assert r["adjustment"] == pytest.approx(24.12 / 106.05)
+    assert r["volume"] == 1000
+
+
 # --------------------------------------------------------------------------
 # classification
 # --------------------------------------------------------------------------

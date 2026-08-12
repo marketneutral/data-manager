@@ -6,7 +6,7 @@ import pytest
 
 from data_manager import universe
 from data_manager.providers.base import BaseProvider
-from data_manager.providers.fmp import FMPProvider
+from data_manager.providers.sharadar import SharadarProvider
 
 
 class FakeProvider(BaseProvider):
@@ -342,5 +342,5 @@ def test_universe_tickers_sorted(conn):
     assert universe.universe_tickers(conn=conn) == ["AAPL", "GOOG", "MSFT"]
 
 
-def test_default_data_provider_is_fmp():
-    assert isinstance(universe._default_data_provider(), FMPProvider)
+def test_default_data_provider_is_sharadar():
+    assert isinstance(universe._default_data_provider(), SharadarProvider)

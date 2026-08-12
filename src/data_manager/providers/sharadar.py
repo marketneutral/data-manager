@@ -126,6 +126,157 @@ def gics_sector(raw: str | None) -> str | None:
     return SHARADAR_TO_GICS.get(raw.strip().strip('"'))
 
 
+def parse_prices(rows: list[dict], start: str, end: str) -> list[dict]:
+    """Map Sharadar stocks/funds rows -> as-traded OHLCV + adjustment entries.
+
+    Sharadar open/high/low/close are SPLIT-ADJUSTED: after a 4:1 split, `close`
+    shows 1/4 of the as-traded price. `closeunadj` is the true as-traded close;
+    as-traded open/high/low are recovered by scaling with the same-row split
+    factor (closeunadj / close), matching FMP's as-traded semantics.
+    `adjustment` = closeadj / closeunadj, so close x adjustment -> closeadj
+    (split+dividend adjusted), exactly like FMP's adjClose / as-traded close.
+    """
+    out = []
+    for r in rows:
+        d = str(r.get("date", ""))
+        if d < start or d > end:
+            continue
+        close_split = _num(r.get("close"))
+        close_unadj = _num(r.get("closeunadj"))
+        if close_unadj is None:
+            close_unadj = close_split          # no as-traded column: fall back
+            factor = 1.0
+        elif close_split:
+            factor = close_unadj / close_split
+        else:
+            factor = 1.0
+        adj_full = _num(r.get("closeadj"))
+        adjustment = (adj_full / close_unadj) if (adj_full and close_unadj) else 1.0
+        op, hi, lo = _num(r.get("open")), _num(r.get("high")), _num(r.get("low"))
+        out.append({
+            "ticker": r.get("ticker"),
+            "date": d,
+            "open": op * factor if op is not None else None,
+            "high": hi * factor if hi is not None else None,
+            "low": lo * factor if lo is not None else None,
+            "close": close_unadj,
+            "adjustment": adjustment,
+            "volume": int(float(r["volume"])) if _num(r.get("volume")) is not None else None,
+        })
+    out.sort(key=lambda x: x["date"])
+    return out
+
+
+def fscore_from_rows(rows: list[dict]) -> list[dict]:
+    """Piotroski F-score from Sharadar ARY rows (identical math to FMP)."""
+    if not rows:
+        return []
+    years = sorted(rows, key=lambda r: str(r.get("calendardate", "")))
+    out = []
+    for i, r in enumerate(years):
+        prev = years[i - 1] if i > 0 else None
+
+        net_income = _num(r.get("netinc"))
+        total_assets = _num(r.get("assets"))
+        if net_income is None and total_assets is None:
+            continue
+        cfo = _num(r.get("ncfo"))
+        total_liab = _num(r.get("liabilities"))
+        cur_a = _num(r.get("assetsc"))
+        cur_l = _num(r.get("liabilitiesc"))
+        shares = _num(r.get("shareswa")) or _num(r.get("sharesbas"))
+        gross = _num(r.get("gp"))
+        revenue = _num(r.get("revenue"))
+
+        p_net_income = _num(prev.get("netinc")) if prev else None
+        p_total_assets = _num(prev.get("assets")) if prev else None
+        p_cfo = _num(prev.get("ncfo")) if prev else None
+        p_total_liab = _num(prev.get("liabilities")) if prev else None
+        p_cur_a = _num(prev.get("assetsc")) if prev else None
+        p_cur_l = _num(prev.get("liabilitiesc")) if prev else None
+        p_shares = (_num(prev.get("shareswa")) or _num(prev.get("sharesbas"))) if prev else None
+        p_gross = _num(prev.get("gp")) if prev else None
+        p_revenue = _num(prev.get("revenue")) if prev else None
+
+        roa = _safe_div(net_income, total_assets)
+        p_roa = _safe_div(p_net_income, p_total_assets)
+        cfo_pos = 1 if (cfo is not None and cfo > 0) else 0
+        d_roa = 1 if (roa is not None and p_roa is not None and roa > p_roa) else 0
+        accruals = 1 if (cfo is not None and net_income is not None and cfo > net_income) else 0
+        d_leverage = 1 if (total_liab is not None and p_total_liab is not None
+                           and total_liab < p_total_liab) else 0
+        lr = _safe_div(cur_a, cur_l)
+        plr = _safe_div(p_cur_a, p_cur_l)
+        d_liquidity = 1 if (lr is not None and plr is not None and lr > plr) else 0
+        equity_issuance = 1 if (shares is not None and p_shares is not None
+                                and shares <= p_shares) else 0
+        gm = _safe_div(gross, revenue)
+        pgm = _safe_div(p_gross, p_revenue)
+        d_gross_margin = 1 if (gm is not None and pgm is not None and gm > pgm) else 0
+        at = _safe_div(revenue, total_assets)
+        pat = _safe_div(p_revenue, p_total_assets)
+        d_asset_turnover = 1 if (at is not None and pat is not None and at > pat) else 0
+
+        out.append({
+            "fiscal_year": int(str(r.get("calendardate", ""))[:4]),
+            "roa": roa, "cfo": cfo,
+            "d_roa": d_roa, "accruals": accruals, "d_leverage": d_leverage,
+            "d_liquidity": d_liquidity, "equity_issuance": equity_issuance,
+            "d_gross_margin": d_gross_margin, "d_asset_turnover": d_asset_turnover,
+            "f_score": sum([cfo_pos, d_roa, accruals, d_leverage, d_liquidity,
+                            equity_issuance, d_gross_margin, d_asset_turnover]),
+        })
+    return out
+
+
+def quarterly_from_rows(rows: list[dict]) -> list[dict]:
+    """Map Sharadar ARQ rows -> quarterly_statements rows."""
+    out = []
+    for r in rows:
+        ni = _num(r.get("netinc"))
+        ta = _num(r.get("assets"))
+        out.append({
+            "period": str(r.get("reportperiod") or r.get("calendardate")),
+            "net_income": ni,
+            "revenue": _num(r.get("revenue")),
+            "gross_profit": _num(r.get("gp")),
+            "operating_cash_flow": _num(r.get("ncfo")),
+            "total_assets": ta,
+            "total_liabilities": _num(r.get("liabilities")),
+            "current_assets": _num(r.get("assetsc")),
+            "current_liabilities": _num(r.get("liabilitiesc")),
+            "shares_out": _num(r.get("shareswa")) or _num(r.get("sharesbas")),
+            "roa": _safe_div(ni, ta),
+            "cfo": _num(r.get("ncfo")),
+        })
+    return out
+
+# ---- ratio snapshot: latest MRY (annual most-recent) row ----
+
+
+def ratios_from_row(r: dict) -> dict:
+    """Map one Sharadar SF1 row (latest MRY) -> ratios snapshot."""
+    rev = _num(r.get("revenue"))
+    opinc = _num(r.get("opinc"))
+    return {
+        "trailing_pe": _num(r.get("pe")),
+        "forward_pe": None,            # Sharadar has no analyst estimates
+        "price_to_book": _num(r.get("pb")),
+        "price_to_sales": _num(r.get("ps")),
+        "roe": _num(r.get("roe")),
+        "roa": _num(r.get("roa")),
+        "net_margin": _num(r.get("netmargin")),
+        "gross_margin": _num(r.get("grossmargin")),
+        "operating_margin": _safe_div(opinc, rev),
+        "debt_to_equity": _num(r.get("de")),
+        "current_ratio": _num(r.get("currentratio")),
+        "dividend_yield": _num(r.get("divyield")),
+        "market_cap": _num(r.get("marketcap")),
+        "enterprise_value": _num(r.get("ev")),
+        "ev_to_ebitda": _num(r.get("evebitda")),
+        "beta": None,                  # not provided; computed locally if needed
+        "shares_outstanding": _num(r.get("shareswa")),
+    }
 class SharadarProvider(BaseProvider):
     name = "sharadar"
 
@@ -144,24 +295,7 @@ class SharadarProvider(BaseProvider):
     def get_prices(self, ticker: str, start: str, end: str) -> list[dict]:
         table = self._price_table(ticker)
         rows = _fetch(table, ticker=ticker)
-        out = []
-        for r in rows:
-            d = str(r.get("date", ""))
-            if d < start or d > end:
-                continue
-            close = _num(r.get("close"))
-            adj = _num(r.get("closeadj")) or _num(r.get("closeunadj"))
-            out.append({
-                "date": d,
-                "open": _num(r.get("open")),
-                "high": _num(r.get("high")),
-                "low": _num(r.get("low")),
-                "close": close,
-                "adjustment": (adj / close) if (close and adj) else 1.0,
-                "volume": int(float(r["volume"])) if _num(r.get("volume")) is not None else None,
-            })
-        out.sort(key=lambda x: x["date"])
-        return out
+        return parse_prices(rows, start, end)
 
     # ---- classification from the securities master ----
     def get_classification(self, ticker: str) -> dict:
@@ -177,112 +311,18 @@ class SharadarProvider(BaseProvider):
     # ---- Piotroski F-Score, identical signal math to FMPProvider ----
     def get_fundamentals(self, ticker: str) -> list[dict]:
         rows = _fetch("fundamentals", ticker=ticker, dimension="ARY")
-        if not rows:
-            return []
-        years = sorted(rows, key=lambda r: str(r.get("calendardate", "")))
-        out = []
-        for i, r in enumerate(years):
-            prev = years[i - 1] if i > 0 else None
+        return fscore_from_rows(rows)
 
-            net_income = _num(r.get("netinc"))
-            total_assets = _num(r.get("assets"))
-            if net_income is None and total_assets is None:
-                continue
-            cfo = _num(r.get("ncfo"))
-            total_liab = _num(r.get("liabilities"))
-            cur_a = _num(r.get("assetsc"))
-            cur_l = _num(r.get("liabilitiesc"))
-            shares = _num(r.get("shareswa")) or _num(r.get("sharesbas"))
-            gross = _num(r.get("gp"))
-            revenue = _num(r.get("revenue"))
-
-            p_net_income = _num(prev.get("netinc")) if prev else None
-            p_total_assets = _num(prev.get("assets")) if prev else None
-            p_cfo = _num(prev.get("ncfo")) if prev else None
-            p_total_liab = _num(prev.get("liabilities")) if prev else None
-            p_cur_a = _num(prev.get("assetsc")) if prev else None
-            p_cur_l = _num(prev.get("liabilitiesc")) if prev else None
-            p_shares = (_num(prev.get("shareswa")) or _num(prev.get("sharesbas"))) if prev else None
-            p_gross = _num(prev.get("gp")) if prev else None
-            p_revenue = _num(prev.get("revenue")) if prev else None
-
-            roa = _safe_div(net_income, total_assets)
-            p_roa = _safe_div(p_net_income, p_total_assets)
-            cfo_pos = 1 if (cfo is not None and cfo > 0) else 0
-            d_roa = 1 if (roa is not None and p_roa is not None and roa > p_roa) else 0
-            accruals = 1 if (cfo is not None and net_income is not None and cfo > net_income) else 0
-            d_leverage = 1 if (total_liab is not None and p_total_liab is not None
-                               and total_liab < p_total_liab) else 0
-            lr = _safe_div(cur_a, cur_l)
-            plr = _safe_div(p_cur_a, p_cur_l)
-            d_liquidity = 1 if (lr is not None and plr is not None and lr > plr) else 0
-            equity_issuance = 1 if (shares is not None and p_shares is not None
-                                    and shares <= p_shares) else 0
-            gm = _safe_div(gross, revenue)
-            pgm = _safe_div(p_gross, p_revenue)
-            d_gross_margin = 1 if (gm is not None and pgm is not None and gm > pgm) else 0
-            at = _safe_div(revenue, total_assets)
-            pat = _safe_div(p_revenue, p_total_assets)
-            d_asset_turnover = 1 if (at is not None and pat is not None and at > pat) else 0
-
-            out.append({
-                "fiscal_year": int(str(r.get("calendardate", ""))[:4]),
-                "roa": roa, "cfo": cfo,
-                "d_roa": d_roa, "accruals": accruals, "d_leverage": d_leverage,
-                "d_liquidity": d_liquidity, "equity_issuance": equity_issuance,
-                "d_gross_margin": d_gross_margin, "d_asset_turnover": d_asset_turnover,
-                "f_score": sum([cfo_pos, d_roa, accruals, d_leverage, d_liquidity,
-                                equity_issuance, d_gross_margin, d_asset_turnover]),
-            })
-        return out
 
     # ---- quarterly statements from the ARQ dimension ----
     def get_quarterly(self, ticker: str) -> list[dict]:
         rows = _fetch("fundamentals", ticker=ticker, dimension="ARQ")
-        out = []
-        for r in rows:
-            ni = _num(r.get("netinc"))
-            ta = _num(r.get("assets"))
-            out.append({
-                "period": str(r.get("reportperiod") or r.get("calendardate")),
-                "net_income": ni,
-                "revenue": _num(r.get("revenue")),
-                "gross_profit": _num(r.get("gp")),
-                "operating_cash_flow": _num(r.get("ncfo")),
-                "total_assets": ta,
-                "total_liabilities": _num(r.get("liabilities")),
-                "current_assets": _num(r.get("assetsc")),
-                "current_liabilities": _num(r.get("liabilitiesc")),
-                "shares_out": _num(r.get("shareswa")) or _num(r.get("sharesbas")),
-                "roa": _safe_div(ni, ta),
-                "cfo": _num(r.get("ncfo")),
-            })
-        return out
+        return quarterly_from_rows(rows)
 
-    # ---- ratio snapshot: latest MRY (annual most-recent) row ----
     def get_ratios(self, ticker: str) -> dict:
         rows = _fetch("fundamentals", ticker=ticker, dimension="MRY")
         if not rows:
             return {}
         r = sorted(rows, key=lambda x: str(x.get("calendardate", "")))[-1]
-        rev = _num(r.get("revenue"))
-        opinc = _num(r.get("opinc"))
-        return {
-            "trailing_pe": _num(r.get("pe")),
-            "forward_pe": None,            # Sharadar has no analyst estimates
-            "price_to_book": _num(r.get("pb")),
-            "price_to_sales": _num(r.get("ps")),
-            "roe": _num(r.get("roe")),
-            "roa": _num(r.get("roa")),
-            "net_margin": _num(r.get("netmargin")),
-            "gross_margin": _num(r.get("grossmargin")),
-            "operating_margin": _safe_div(opinc, rev),
-            "debt_to_equity": _num(r.get("de")),
-            "current_ratio": _num(r.get("currentratio")),
-            "dividend_yield": _num(r.get("divyield")),
-            "market_cap": _num(r.get("marketcap")),
-            "enterprise_value": _num(r.get("ev")),
-            "ev_to_ebitda": _num(r.get("evebitda")),
-            "beta": None,                  # not provided; computed locally if needed
-            "shares_outstanding": _num(r.get("shareswa")),
-        }
+        return ratios_from_row(r)
+
