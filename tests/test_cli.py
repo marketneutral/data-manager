@@ -39,6 +39,23 @@ def test_main_status(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "universe:" in out
     assert "prices:" in out
+    assert "french_factors:" in out
+
+
+def test_main_update_french_factors(monkeypatch, tmp_path, capsys):
+    seen = {}
+
+    def fake(conn, dest_dir=None, force=False):
+        seen["force"] = force
+        seen["dest_dir"] = dest_dir
+        return {"rows": 5, "downloaded": ["3f"], "skipped": ["5f", "mom"]}
+
+    monkeypatch.setattr("data_manager.factors.update_french_factors", fake)
+    rc = cli.main(["update-french-factors", "--db", str(tmp_path / "f.db")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "French factor rows in db: 5" in out
+    assert seen["force"] is False and seen["dest_dir"] is not None
 
 
 def test_main_update_universe(monkeypatch, tmp_path, capsys):

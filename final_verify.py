@@ -20,12 +20,16 @@ n_fundt = cnt("SELECT COUNT(DISTINCT ticker) FROM fundamentals")
 lines.append(f"  fundamentals: {n_fund} rows across {n_fundt} tickers")
 n_rat = cnt("SELECT COUNT(*) FROM ratios")
 lines.append(f"  ratios: {n_rat} snapshots")
+n_ff = cnt("SELECT COUNT(*) FROM french_factors")
+ff_min, ff_max = con.execute("SELECT MIN(date), MAX(date) FROM french_factors").fetchone()
+lines.append(f"  french_factors: {n_ff} rows ({ff_min} -> {ff_max})")
 
 # assertions
 asserts = [
     ("prices present", n_pricet > n_u * 0.75),
     ("fundamentals present", n_fundt > 0),
     ("ratios present", n_rat > 0),
+    ("french factors present", n_ff > 20000),
     ("sic done", cnt("SELECT COUNT(*) FROM universe WHERE sic IS NOT NULL AND sic!=''") > 2500),
 ]
 for name, passed in asserts:

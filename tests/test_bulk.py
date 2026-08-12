@@ -50,10 +50,13 @@ def test_bulk_fromzero_wipes_and_loads_all(dir_, monkeypatch, conn):
     monkeypatch.setattr("data_manager.universe.build_ratios", lambda conn: 1)
     monkeypatch.setattr("data_manager.universe.build_universe_pit",
                         lambda conn, as_of=None: 123)
+    monkeypatch.setattr("data_manager.factors.update_french_factors",
+                        lambda conn, dest_dir=None, force=False: {"rows": 6})
     counts = B.bulk_fromzero(dest_dir=dir_, conn=conn, derive=True, pit=True)
     assert counts["x"] if False else True
     assert conn.execute("SELECT COUNT(*) FROM prices").fetchone()[0] == 0  # wiped
     assert set(counts.keys()) >= set(B.BULK_TABLES)
+    assert counts["french_factors"] == 6   # Ken French refresh part of from-zero
 
 
 def test_bulk_update_skips_unmodified_and_loads_changed(dir_, monkeypatch, conn):
@@ -68,6 +71,9 @@ def test_bulk_update_skips_unmodified_and_loads_changed(dir_, monkeypatch, conn)
     monkeypatch.setattr("data_manager.universe.build_quarterly", lambda conn: 1)
     monkeypatch.setattr("data_manager.universe.build_ratios", lambda conn: 1)
     monkeypatch.setattr("data_manager.universe.build_universe_pit", lambda conn, as_of=None: 1)
+    monkeypatch.setattr("data_manager.factors.update_french_factors",
+                        lambda conn, dest_dir=None, force=False: {"loaded": {"3f": 9}})
     res = B.bulk_update(dest_dir=dir_, conn=conn, tables=["stocks"], force=False)
     assert loads == ["stocks"]
     assert res["skipped"] == []
+    assert res["loaded"]["french_factors"] == 9  # factors refreshed alongside

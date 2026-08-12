@@ -177,3 +177,77 @@ def load_fundamentals(path, conn, commit_every=100000):
 
 load_stocks = load_prices
 load_funds = load_prices
+
+
+# --------------------------------------------------------------------------
+# Ken French daily factor returns (mba.tuck.dartmouth.edu, US daily files)
+# --------------------------------------------------------------------------
+
+def _french_num(v):
+    """Number from a French CSV cell; vendor missing sentinels -> None."""
+    v = v.strip()
+    if v in ("", "-99.99", "-999", "-99.00"):
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _french_iso(d8: str) -> str:
+    """'YYYYMMDD' -> 'YYYY-MM-DD' (repo-wide date convention)."""
+    return f"{d8[:4]}-{d8[4:6]}-{d8[6:]}"
+
+
+def load_french_factor_file(path, conn, cols, vcols, commit_every=50000):
+    """Load ONE Ken French daily-factor CSV zip into `french_factors`.
+
+    Format (all five files): comment preamble lines, a header line whose
+    first field is empty (e.g. `,Mkt-RF,SMB,HML,RF`), then data rows
+    `YYYYMMDD, 0.09, -0.25, ...`. Values are PERCENT per day; the vendor
+    -99.99 missing sentinel becomes NULL. Columns map positionally to
+    `cols` (db column names); `vcols` is the vendor header used for a
+    sanity warning on format drift, never for the mapping.
+    """
+    import io
+    import csv
+    import zipfile
+    n = 0
+    rows = []
+    marks = ",".join("?" * len(cols))
+    # per-column upsert: the wide table is filled from FIVE source files, so a
+    # plain INSERT OR REPLACE would delete the row and NULL out the other
+    # files' columns. Last file loaded wins for its own columns only.
+    updates = ", ".join(f"{c}=excluded.{c}" for c in cols)
+
+    def flush():
+        nonlocal rows
+        conn.executemany(
+            "INSERT INTO french_factors (date," + ",".join(cols) + ")"
+            " VALUES (?," + marks + ")"
+            " ON CONFLICT(date) DO UPDATE SET " + updates, rows)
+        rows = []
+
+    with zipfile.ZipFile(path) as z:
+        with z.open(z.namelist()[0]) as f:
+            for line in csv.reader(io.TextIOWrapper(f)):
+                if not line:
+                    continue
+                first = line[0].strip()
+                if first == "" and len(line) > 1:          # header line
+                    got = [c.strip() for c in line[1:]]
+                    if got[:len(vcols)] != vcols:
+                        print(f"[french] header drift: expected {vcols}, got {got}",
+                              flush=True)
+                    continue
+                if not (len(first) == 8 and first.isdigit()):  # preamble/notes
+                    continue
+                vals = [_french_num(c) for c in line[1:1 + len(cols)]]
+                rows.append((_french_iso(first), *vals))
+                n += 1
+                if len(rows) >= commit_every:
+                    flush()
+                    conn.commit()
+    flush()
+    conn.commit()
+    return n

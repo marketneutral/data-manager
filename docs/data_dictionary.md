@@ -12,6 +12,7 @@ Column-level definitions for every table in `~/.prime/agent/data_manager.db`. Ve
 | `metrics` | RAW (metrics zip) | `descriptions` (METRICS) | (ticker, as_of) |
 | `sf1` | RAW (fundamentals zip) | `descriptions` (SF1) | (ticker, dimension, reportperiod) |
 | `prices` | RAW (stocks+funds zips) | `descriptions` (SEP/SFP) | (ticker, date) |
+| `french_factors` | RAW (Ken French Data Library) | this repo (`descriptions` rows written by the factor loader) | date (one row per trading day) |
 | `fundamentals` | DERIVED (sf1 ARY) | this repo | (ticker, fiscal_year) |
 | `quarterly_statements` | DERIVED (sf1 ARQ) | this repo | (ticker, period) |
 | `ratios` | DERIVED (sf1 MRY + price) | this repo | ticker (one row) |
@@ -239,6 +240,34 @@ Column-level definitions for every table in `~/.prime/agent/data_manager.db`. Ve
 | `volume` | numeric | Volume - Split Adjusted — The daily traded volume across all exchanges; adjusted for stock splits and stock dividends. Not adjusted for cash dividends or spinoffs. Includes opening and closing cross volumes if applicable. |
 | `adjustment` |  | this repo — total-return factor = closeadj/closeunadj (split+dividend chain, normalized to 1.0 at latest quote) |
 
+### `french_factors` — RAW (Ken French Data Library, daily factor files)
+
+Five US daily factor files from mba.tuck.dartmouth.edu (free; the only
+non-Sharadar raw table). Wide, one row per trading day: a factor that is
+not yet defined on a date (or a vendor `-99.99` missing value) is NULL.
+All returns are **percent per day** (0.09 = 0.09%). `rf` is the daily
+risk-free rate (compounds to the 1-month T-bill), served identically by the
+3F and 5F files and stored once.
+
+| column | unit | definition |
+|---|---|---|
+| `date` | text | Trading day (YYYY-MM-DD; the source `YYYYMMDD` converted) |
+| `mkt_rf` | %/day | Market excess return: value-weight return of all US CRSP stocks (NYSE/AMEX/NASDAQ, share codes 10/11) minus `rf` |
+| `smb` | %/day | Small Minus Big — avg of the three small size/B-M portfolios minus the three big ones (size factor) |
+| `hml` | %/day | High Minus Low — avg of the two value (high B-M) portfolios minus the two growth ones (value factor) |
+| `rmw` | %/day | Robust Minus Weak — avg of the two robust-operating-profitability portfolios minus the two weak ones |
+| `cma` | %/day | Conservative Minus Aggressive — avg of the two conservative-investment portfolios minus the two aggressive ones |
+| `mom` | %/day | Momentum — avg of the two high prior (2-12 mo) return portfolios minus the two low ones, formed daily |
+| `st_rev` | %/day | Short-term reversal — avg of the two low prior (1-1 mo) return portfolios minus the two high ones |
+| `lt_rev` | %/day | Long-term reversal — avg of the two low prior (13-60 mo) return portfolios minus the two high ones |
+| `rf` | %/day | Daily risk-free rate (simple daily rate compounding to the 1-month T-bill rate) |
+
+Source-file ranges: 3 Factors (Mkt-RF/SMB/HML/RF) 1926-07-01 →, 5 Factors
+(+RMW/CMA) 1963-07-01 →, Momentum 1926-11-03 →, ST reversal 1926-01-26 →,
+LT reversal 1930-03-20 → (all through 2026-06-30 in the current pull).
+Refresh: `data-manager update-french-factors` (manifest-skipped; also run
+by `bulk-update`).
+
 ## Derived tables (this repo)
 
 ### `fundamentals` — DERIVED (sf1 ARY)
@@ -353,6 +382,10 @@ Column-level definitions for every table in `~/.prime/agent/data_manager.db`. Ve
 
 ## Notes
 
+- `french_factors` is the one non-Sharadar raw table: Ken French's free
+  daily factor files, column dictionary written by `data-manager
+  update-french-factors` into `descriptions` (table_name
+  `french_factors`). It is independent of the Sharadar bulk zips.
 - The vendor dictionary documents 17 datasets; this warehouse stores the ones in the coverage map. Vendor tables we do **not** store: `SF2` (insiders), `SF3/SF3A/SF3B` (institutional investors), `EVENTS`/`EVENTCODES` (material events), `DAILY` (daily fundamental metrics: mcap/EV/PE slices), and the meta-tables `INDICATORS`, `ACTIONTYPES`, `TABLE-DESCRIPTIONS` (all present inside `descriptions` if needed).
 
 - `prices` comes from the SEP (stocks) / SFP (funds) bulk price columns; `closeadj` and `closeunadj` are collapsed into the single `adjustment` factor; vendor OHLC are split-adjusted, we store them as-traded (see the adjustment section of the report).

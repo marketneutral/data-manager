@@ -412,3 +412,56 @@ populated; SQLite NULL = 1-byte tag).
   note), report §4/§5-appendix/§10 + §2/§2.1 wording ("every field is a
   native column"), docs/data_dictionary.md/.json (sf1 = 112 columns,
   sf1_blob entry removed).
+
+## Ken French daily factor returns — `french_factors` table (2026-08-12)
+
+User ask: add the Ken French (mba.tuck.dartmouth.edu) US **daily factor
+returns** as a first-class core table. Scope (verified against the live
+site today): the five US daily factor files — 3 Factors (Mkt-RF, SMB, HML,
+RF; 1926-07-01→), 5 Factors (2x3; adds RMW, CMA; 1963-07-01→), Momentum
+(Mom; 1926-11-03→), Short-Term Reversal (ST_Rev; 1926-01-26→), Long-Term
+Reversal (LT_Rev; 1930-03-20→). All values are PERCENT per day
+(0.09 = 0.09%). The official site has NO combined daily "3F+momentum"
+file; the portfolio files (6/25/100 size-sorts, industry, etc.) were NOT
+ingested — they are the raw buckets the factors are built from, useful
+only for decompositions/custom constructions.
+
+- Schema: wide table `french_factors(date PK, mkt_rf, smb, hml, rmw, cma,
+  mom, st_rev, lt_rev, rf)` — one row per trading day, 26,403 rows,
+  1926-01-26 → 2026-06-30. Text date `YYYY-MM-DD` (source `YYYYMMDD`
+  converted), missing = vendor `-99.99` sentinel → NULL.
+- RF is served by BOTH the 3F and 5F files; verified identical on all
+  15,854 overlapping dates, stored once in `rf` (daily rate compounding to
+  the 1-month T-bill).
+- New module `src/data_manager/factors.py`: FACTOR_FILES registry, HEAD-
+  Last-Modified manifest-skipped download (same `~/.prime/agent/bulk/
+  _manifest.json` as the Sharadar bulk pipeline; manifest keys `3f/5f/mom/
+  st_rev/lt_rev`), and `update_french_factors()` which downloads -> loads
+  -> writes the column dictionary rows (table_name='french_factors' in the
+  `descriptions` table — the in-DB data dictionary now covers this table
+  too) -> `snapshots` ledger entry (source='french_factors').
+- Loader `bulkload.load_french_factor_file` inserts with a PER-COLUMN
+  ON CONFLICT DO UPDATE upsert. GOTCHA caught during the build: a naive
+  INSERT OR REPLACE into the wide table NULLs the other files' columns on
+  each reload (replace = delete + insert with only the given columns);
+  regression test test_multi_file_merge_preserves_other_files_columns.
+- CLI: `data-manager update-french-factors [--force] [--dir] [--db]`;
+  `status` prints `french_factors: 26403 rows (1926-01-26 -> 2026-06-30)`.
+  `bulk-update`/`bulk-fromzero` refresh it automatically (from-zero wipes
+  it in WIPE_TABLES and force-re-downloads; update catches French-site
+  failures so a Ken-French outage never aborts the Sharadar update).
+  French loads never trigger the SF1 derivations/PIT.
+- Tests: tests/test_factors.py (loader dates/sentinels/idempotency, header
+  drift tolerance, multi-file merge regression, end-to-end update with
+  faked downloads incl. ledger + dictionary rows, manifest skip) + CLI
+  dispatch + status + bulk hooks; suite now 96 green.
+- Docs: AGENTS.md (tables row, "French factor returns" section, dictionary
+  coverage 7→8 raw tables, hygiene step 2, read-path row), README (features/
+  schema/CLI/sources), docs/data_dictionary.md + .json (coverage map +
+  raw-table section + entry), report/data.qmd (raw lineage row, dictionary
+  table row, read-path row), make_spec_sheet.py + final_verify.py (coverage
+  line), NOTES.md (this section).
+- Live DB loaded 2026-08-12: 26,403 rows; spot-checked 2026-06-30 SMB=-0.10
+  / HML=-0.62 / Mkt-RF=0.73 / Mom=1.06 / ST_Rev=0.49 / LT_Rev=-0.23 (match
+  the vendor files exactly). The factors are value-weighted long-short
+  spreads — never join to `prices` by ticker; they are market factor series.

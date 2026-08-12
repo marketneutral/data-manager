@@ -36,7 +36,7 @@ BULK_TABLES = {
 
 # tables whose contents get wiped before a from-zero load
 WIPE_TABLES = ["prices", "sf1", "corporate_actions", "securities_master",
-               "metrics", "sp500_membership"]
+               "metrics", "sp500_membership", "french_factors"]
 
 
 def _key() -> str:
@@ -146,6 +146,11 @@ def bulk_fromzero(dest_dir: str = DEFAULT_DIR, conn=None, pit_asof: str = None,
     for table in BULK_TABLES:
         path = os.path.join(dest_dir, _manifest(dest_dir).get(table, {}).get("name", f"{table}.csv.zip"))
         counts[table] = _load(table, path, conn)
+    # Ken French daily factor returns (separate source, tiny files; forced
+    # re-download so the rebuild is deterministic).
+    from . import factors as FF
+    counts["french_factors"] = FF.update_french_factors(conn, dest_dir=dest_dir,
+                                                        force=True)["rows"]
     if derive:
         print("[bulk] deriving piotroski/quarterly/ratios", flush=True)
         counts["piotroski"] = build_piotroski(conn)
@@ -185,4 +190,14 @@ def bulk_update(dest_dir: str = DEFAULT_DIR, conn=None, tables=None,
     if pit and loaded_core:
         loaded_core["pit"] = build_universe_pit_history(conn)
     loaded = loaded_core
+    # Ken French daily factor returns (separate source; refreshed every
+    # update pass so one command keeps the whole warehouse current —
+    # sharadar-only derives above are gated on `loaded_core`).
+    from . import factors as FF
+    try:
+        frep = FF.update_french_factors(conn, dest_dir=dest_dir, force=force)
+        if frep["loaded"]:
+            loaded["french_factors"] = sum(frep["loaded"].values())
+    except Exception as exc:
+        print(f"[bulk] french_factors refresh failed: {type(exc).__name__}: {exc}", flush=True)
     return {"loaded": loaded, "skipped": skipped}

@@ -2127,5 +2127,92 @@
     "source": "this repo (derived)"
    }
   ]
+ },
+ "french_factors": {
+  "origin": "RAW (Ken French Data Library, daily factor files)",
+  "key": "date (one row per trading day)",
+  "notes": "Five US daily factor files from mba.tuck.dartmouth.edu (free; the only non-Sharadar raw table). Wide, one row per trading day; a factor not yet defined on a date (or the vendor -99.99 sentinel) is NULL. All returns are percent per day (0.09 = 0.09%). rf is the daily risk-free rate (compounds to the 1-month T-bill), served identically by the 3F and 5F files and stored once. Column definitions also live in the `descriptions` table (table_name french_factors), written by `data-manager update-french-factors`.",
+  "columns": [
+   {
+    "name": "date",
+    "type": "TEXT",
+    "pk": 1,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Trading day (YYYY-MM-DD; the source YYYYMMDD converted)",
+    "source": "this repo (Ken French)"
+   },
+   {
+    "name": "mkt_rf",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "%/day",
+    "definition": "Market excess return: value-weight return of all US CRSP stocks (NYSE/AMEX/NASDAQ, share codes 10/11) minus rf",
+    "source": "this repo (Ken French)"
+   },
+   {
+    "name": "smb",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "%/day",
+    "definition": "Small Minus Big \u2014 avg of the three small size/B-M portfolios minus the three big ones (size factor)",
+    "source": "this repo (Ken French)"
+   },
+   {
+    "name": "hml",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "%/day",
+    "definition": "High Minus Low \u2014 avg of the two value (high B-M) portfolios minus the two growth ones (value factor)",
+    "source": "this repo (Ken French)"
+   },
+   {
+    "name": "rmw",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "%/day",
+    "definition": "Robust Minus Weak \u2014 avg of the two robust-operating-profitability portfolios minus the two weak ones",
+    "source": "this repo (Ken French)"
+   },
+   {
+    "name": "cma",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "%/day",
+    "definition": "Conservative Minus Aggressive \u2014 avg of the two conservative-investment portfolios minus the two aggressive ones",
+    "source": "this repo (Ken French)"
+   },
+   {
+    "name": "mom",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "%/day",
+    "definition": "Momentum \u2014 avg of the two high prior (2-12 mo) return portfolios minus the two low ones, formed daily",
+    "source": "this repo (Ken French)"
+   },
+   {
+    "name": "st_rev",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "%/day",
+    "definition": "Short-term reversal \u2014 avg of the two low prior (1-1 mo) return portfolios minus the two high ones",
+    "source": "this repo (Ken French)"
+   },
+   {
+    "name": "lt_rev",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "%/day",
+    "definition": "Long-term reversal \u2014 avg of the two low prior (13-60 mo) return portfolios minus the two high ones",
+    "source": "this repo (Ken French)"
+   },
+   {
+    "name": "rf",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "%/day",
+    "definition": "Daily risk-free rate (simple daily rate compounding to the 1-month T-bill rate)",
+    "source": "this repo (Ken French)"
+   }
+  ]
  }
 }

@@ -54,6 +54,7 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | corporate_actions | raw (actions zip) | (ticker,date,action) | splits, dividends, delisted, tickerchanges, bankruptcyliquidation |
 | metrics | raw (metrics zip) | (ticker,as_of) | snapshot stats (betas, MA, 52w, returns, div yields) |
 | sp500_membership | raw (API) | (ticker,date) | S&P membership history 1957→now |
+| french_factors | raw (Ken French Data Library) | date | daily US factor returns in % (percent/day): Mkt-RF, SMB, HML, RMW, CMA, Mom, ST_Rev, LT_Rev, RF |
 | fundamentals | derived (sf1 ARY) | (ticker,fiscal_year) | Piotroski F-Score + 9 components |
 | quarterly_statements | derived (sf1 ARQ) | (ticker,period) | 13-col quarterly mirror |
 | ratios | derived (sf1 MRY latest) | ticker | valuation/quality snapshot (forward_pe & beta always NULL — SF1 lacks them) |
@@ -75,15 +76,19 @@ FROM descriptions
 WHERE table_name = 'SF1' AND indicator = 'revenue';
 ```
 
-- Covers all 7 raw warehouse tables: `securities_master` (TICKERS),
+- Covers all 8 raw warehouse tables: `securities_master` (TICKERS),
   `corporate_actions` (ACTIONS), `sp500_membership` (SP500), `metrics`
   (METRICS), `sf1` (SF1 — all 112 fields stored as native columns), `prices` (SEP/SFP bulk price columns), plus the vendor's
-  meta catalogs `TABLE-DESCRIPTIONS` and `ACTIONTYPES`.
+  meta catalogs `TABLE-DESCRIPTIONS` and `ACTIONTYPES`; `french_factors`
+  (Ken French Data Library) adds its own dictionary rows via its loader.
 - The 7 derived/ledger tables (`fundamentals`, `quarterly_statements`,
   `ratios`, `universe_pit`, `classifications`, `universe`, `snapshots`)
   are NOT vendor fields — their definitions are written by this repo in
   `docs/data_dictionary.md` / `docs/data_dictionary.json` (generated from
   this table; keep them in sync when the schema or semantics change).
+  `french_factors` is a raw table from a different vendor, so its column
+  definitions are also written as `descriptions` rows (table_name
+  `french_factors`) by the factor loader itself.
 - If a column has no `descriptions` row, its definition is under "this
   repo (local semantics)" in `docs/data_dictionary.md` — check there
   before inventing semantics.
@@ -172,6 +177,39 @@ WHERE table_name = 'SF1' AND indicator = 'revenue';
 * PIT market cap: `close × shareswa` (ARQ/ARY ≤ date). Banks' `grossmargin`
   ≈ 1.0 and `fcf` structurally negative — expected artifacts.
 
+## French factor returns (`french_factors`)
+
+One row per US trading day, `date` PRIMARY KEY (TEXT `YYYY-MM-DD`; the
+source's `YYYYMMDD` converted), covering **1926-01-26 → present** (26,403
+rows). Raw from the **Ken French Data Library** daily factor files
+(mba.tuck.dartmouth.edu/ftp, five CSV zips, free; the only non-Sharadar
+raw table in the warehouse):
+
+| column | source file | starts |
+|---|---|---|
+| `mkt_rf`, `smb`, `hml`, `rf` | Fama/French 3 Factors | 1926-07-01 |
+| `rmw`, `cma` | Fama/French 5 Factors (2x3) | 1963-07-01 |
+| `mom` | Momentum Factor | 1926-11-03 |
+| `st_rev` | Short-Term Reversal | 1926-01-26 |
+| `lt_rev` | Long-Term Reversal | 1930-03-20 |
+
+- **Units are PERCENT per day** (0.09 = 0.09%), exactly as the site serves
+  them. The vendor missing sentinel `-99.99` is stored **NULL**.
+- `rf` is the daily risk-free rate (the simple daily rate that compounds to
+  the 1-month T-bill over the month's trading days). It is served by both
+  the 3F and 5F files with identical values (verified on all 15,854
+  overlapping dates) — stored once.
+- The factors are value-weighted **long-short spreads** built from the
+  site's 6-portfolio buckets (e.g. `smb = 1/3(Small V+N+G) − 1/3(Big
+  V+N+G)`); they are *market* factor series, not tradable instruments —
+  never join them to `prices` by ticker. Column definitions live in the
+  `descriptions` table (`table_name='french_factors'`, written by the
+  factor loader along with the data).
+- Refresh: `uv run data-manager update-french-factors` (manifest-skipped
+  via Last-Modified; `--force` re-downloads). `bulk-update`/`bulk-fromzero`
+  refresh it automatically; French loads never trigger the SF1
+  derivations/PIT.
+
 ## universe_pit semantics (read this twice)
 
 One row per (trading day, member). Membership iff, **as of that day**:
@@ -210,7 +248,10 @@ of members across all days without the as_of predicate.
    server's `modified` stamp (`~/.prime/agent/bulk/_manifest.json`),
    re-downloads only changed files (~2 GB/day worst case), reloads those
    tables (prices full reload ≈ 12 min), re-derives piotroski/quarterly/
-   ratios, rebuilds `universe_pit --history` (≈ 12 min). Log: `logs/`.
+   ratios, rebuilds `universe_pit --history` (≈ 12 min), and refreshes
+   `french_factors` from the Ken French Data Library (tiny files, own
+   Last-Modified skip in the same manifest; a French-site outage never
+   aborts the rest). Log: `logs/`.
 3. `uv run data-manager optimize-db --backup <path>` — consistent backup,
    checkpoint, ANALYZE, `quick_check`, VACUUM (~3 min). Run after every
    update; keep one backup per full rebuild (DB ≈ 16 GB).
@@ -220,7 +261,7 @@ of members across all days without the as_of predicate.
      moved forward together.
    * Spot check a well-known name (AAPL last close sane; 2026 profile
      ≈ live price, 1998-01-14 ≈ $19.75 — the fixed-profile fingerprint).
-   * `uv run pytest -q` (86 tests, incl. the PIT profile regression).
+   * `uv run pytest -q` (96 tests, incl. the PIT profile regression).
 5. Cadence: the bulk zips are daily; a morning `bulk-update` + `optimize-db`
    keeps the warehouse current. `bulk-fromzero` is the full rebuild path
    (downloads everything, wipes, loads, derives, PIT, optimizes).
@@ -238,4 +279,5 @@ of members across all days without the as_of predicate.
 | investable members on D | `SELECT * FROM universe_pit WHERE as_of=?` (uses `idx_pit_asof`) |
 | fundamentals history | `SELECT * FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod` (all 112 fields native columns) |
 | delisting evidence | `corporate_actions` rows `action IN ('delisted','bankruptcyliquidation')` |
+| factor returns (daily) | `SELECT date, mkt_rf, smb, hml, rmw, cma, mom, st_rev, lt_rev, rf FROM french_factors WHERE date >= ?` (returns are %/day) |
 | column definition / unit | `SELECT title, description FROM descriptions WHERE table_name=? AND indicator=?` — see the **"data dictionary is IN the database"** section above; derived-table columns: `docs/data_dictionary.md` |

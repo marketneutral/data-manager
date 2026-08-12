@@ -58,6 +58,11 @@ D["rat_tickers"] = one("SELECT COUNT(DISTINCT ticker) FROM ratios")
 D["rat_asof"] = one("SELECT MAX(as_of) FROM ratios")
 rc = ["trailing_pe","forward_pe","price_to_book","roe","net_margin","debt_to_equity","dividend_yield","beta"]
 D["rat_missing"] = {c: one(f"SELECT COUNT(*) FROM ratios WHERE {c} IS NULL") for c in rc}
+
+D["ff_rows"] = one("SELECT COUNT(*) FROM french_factors")
+D["ff_min"], D["ff_max"] = pair("SELECT MIN(date), MAX(date) FROM french_factors")
+D["ff_cols"] = {c: one(f"SELECT COUNT(*) FROM french_factors WHERE {c} IS NOT NULL")
+                for c in ["mkt_rf","smb","hml","rmw","cma","mom","st_rev","lt_rev","rf"]}
 con.close()
 
 payload = json.dumps(D, default=str)
@@ -171,8 +176,18 @@ __rat_rows_html__
 </table>
 </div>
 
+<h2>8 · Ken French daily factor returns</h2>
+<table><tr><th>Metric</th><th class="num">Value</th></tr>
+<tr><td>Rows (trading days)</td><td class="num">__ff_rows_comma__</td></tr>
+<tr><td>Date range</td><td class="num">__ff_min__ → __ff_max__</td></tr>
+<tr><td>Mkt-RF / SMB / HML populated</td><td class="num">__ff_mkt_rf__</td></tr>
+<tr><td>RMW / CMA populated</td><td class="num">__ff_rmw__ / __ff_cma__</td></tr>
+<tr><td>Mom / ST_Rev / LT_Rev populated</td><td class="num">__ff_mom__ / __ff_st_rev__ / __ff_lt_rev__</td></tr>
+<tr><td>RF populated</td><td class="num">__ff_rf__</td></tr></table>
+<div class="note">Percent per day; vendor -99.99 missing → NULL. Ken French Data Library (free); refreshed by update-french-factors / bulk-update.</div>
+
 <div class="foot">Pipeline: universe (iShares IWV) → identifiers (FIGI/CIK/SIC via OpenFigi+SEC) → classifications →
-prices (as-traded, resumable/paced) → fundamentals (Piotroski) → ratios (FMP TTM). All local · status = live coverage snapshot.</div>
+prices (as-traded, resumable/paced) → fundamentals (Piotroski) → ratios (FMP TTM) → french factors (Ken French). All local · status = live coverage snapshot.</div>
 </body></html>"""
 
 def bar(pct):
@@ -227,6 +242,12 @@ repl = {
     "__class_industry__": D["class_industry"], "__class_industry_pct__": round(D["class_industry"]/D["universe_total"]*100,1),
     "__id_rows__": "\n".join(id_rows), "__fscore_rows__": "\n".join(fscore_rows),
     "__rat_rows_html__": "\n".join(rat_rows_html),
+    "__ff_rows_comma__": f"{D['ff_rows']:,}",
+    "__ff_min__": D["ff_min"], "__ff_max__": D["ff_max"],
+    "__ff_mkt_rf__": f"{D['ff_cols']['mkt_rf']:,}", "__ff_rmw__": f"{D['ff_cols']['rmw']:,}",
+    "__ff_cma__": f"{D['ff_cols']['cma']:,}", "__ff_mom__": f"{D['ff_cols']['mom']:,}",
+    "__ff_st_rev__": f"{D['ff_cols']['st_rev']:,}", "__ff_lt_rev__": f"{D['ff_cols']['lt_rev']:,}",
+    "__ff_rf__": f"{D['ff_cols']['rf']:,}",
 }
 html = HTML
 for k, v in repl.items():

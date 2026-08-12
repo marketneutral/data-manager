@@ -15,6 +15,9 @@ Acquisition, storage, and point-in-time market data for the quant research stack
   flags, first/last priced dates, FIGI, SIC, CUSIPs, exchange, ...).
 - **Corporate actions:** splits, dividends, ticker changes, delistings.
 - **S&P500 membership:** current members + per-member history back to the 1980s.
+- **Ken French daily factor returns:** `french_factors` — Mkt-RF, SMB, HML,
+  RMW, CMA, Mom, ST_Rev, LT_Rev (+ daily RF), 1926 → now, percent/day,
+  from the Ken French Data Library (free; the only non-Sharadar raw table).
 - **Storage:** a single local SQLite database (`~/.prime/agent/data_manager.db`).
 
 **Data provider: Sharadar is the sole provider** (FMP removed 2026-08-11 — fresh
@@ -47,6 +50,7 @@ uv run data-manager update-fundamentals --all --force        # F-score (SF1 AR)
 uv run data-manager update-quarterly --all --force           # SF1 quarterly
 uv run data-manager update-ratios --all --force              # ratio snapshots
 uv run data-manager update-sp500                             # S&P500 membership (current + history)
+uv run data-manager update-french-factors                     # Ken French daily factors (free, 5 tiny zips)
 ```
 
 All `update-*` jobs are **resumable** (skip already-covered tickers unless
@@ -65,6 +69,8 @@ providers/            data sources (pluggable)
                         actions, sp500 membership, classifications (GICS-mapped)
   financialdatasets.py  legacy paid alternative (kept, not default)
 universe.py           orchestration: update_* functions (resumable, paced, resilient)
+factors.py            Ken French daily factor returns: download (Last-Modified
+                      manifest skip) + load + dictionary rows + snapshots ledger
 enrich.py             optional SEC/OpenFigi enrichment (FIGI/CIK/SIC/LEI) — legacy;
                       superseded for most fields by the Sharadar securities master
 db.py                 SQLite schema + connection (WAL, busy_timeout)
@@ -100,6 +106,14 @@ ticker, date, action, name, value, contraticker, contraname.
 ticker, date, action (`current|historical|added|removed`), name, contraticker,
 contraname, note. The unscoped endpoint serves ~1 year; per-ticker pulls give
 full history (e.g. AAPL back to 1982-11-30).
+
+### `french_factors` — Ken French daily factor returns (PK: date)
+date, mkt_rf, smb, hml, rmw, cma, mom, st_rev, lt_rev, rf. One wide row per
+US trading day, 1926-01-26 → now (26,403 rows); returns are **percent per
+day** as served by mba.tuck.dartmouth.edu, missing (`-99.99` sentinel) →
+NULL. Built from the five US daily factor files (3F, 5F 2x3, Mom, ST_Rev,
+LT_Rev); `rf` is the daily risk-free rate shared by the 3F/5F files. Column
+definitions are written into the `descriptions` table by the loader.
 
 ### `prices` — as-of OHLCV + adjustment (PK: ticker, date)
 date, open, high, low, close, volume — **raw as-traded** prices; `adjustment` =
@@ -144,6 +158,7 @@ data-manager update-fundamentals --all [--force] [--ticker A,B]
 data-manager update-quarterly --all [--force] [--ticker A,B]
 data-manager update-ratios --all [--force] [--ticker A,B]
 data-manager update-sp500                              S&P500 membership
+data-manager update-french-factors [--force]          Ken French daily factor returns (3F/5F/Mom/ST/LT)
 data-manager enrich-cik | enrich-figi | enrich-sic     legacy SEC/OpenFigi enrichment
 ```
 
@@ -155,6 +170,7 @@ data-manager enrich-cik | enrich-figi | enrich-sic     legacy SEC/OpenFigi enric
 |---|---|---|
 | iShares IWV CSV | universe + sector | free |
 | **Sharadar** | prices (stocks+funds), SF1 fundamentals/quarterlies/ratios, master, actions, sp500, classifications | paid subscription |
+| **Ken French Data Library** | `french_factors` — US daily factor returns (3F/5F/Mom/ST_Rev/LT_Rev + RF) | free |
 | SEC / OpenFigi | legacy enrichment (figi/cik/sic/lei) | free |
 
 ---
@@ -191,6 +207,11 @@ Tables: tickers, stocks (46.3M rows full, 1998->), funds, actions (673k),
 metrics (with history to 1997), sp500, fundamentals (6 dims incl. TTM ART/MRT,
 1990->). Bulk semantics verified: price volume is as-traded; OHLC split-adjusted
 (closeunadj = as-traded close); SF1 report date is `datekey`.
+
+Ken French factors are a separate source (not a Sharadar bulk zip): the five
+daily factor zips are tiny, live in the same cache directory, skip via their
+own Last-Modified manifest keys (`3f/5f/mom/st_rev/lt_rev`), and are refreshed
+by every `bulk-update`/`bulk-fromzero` pass.
 
 ## Verification
 

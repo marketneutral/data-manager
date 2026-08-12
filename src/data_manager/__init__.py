@@ -16,6 +16,7 @@ from .universe import (
     universe_tickers,
     adjusted_prices,
 )
+from .factors import update_french_factors
 
 __all__ = [
     "db",
@@ -25,4 +26,5 @@ __all__ = [
     "update_fundamentals",
     "universe_tickers",
     "adjusted_prices",
+    "update_french_factors",
 ]

@@ -13,6 +13,7 @@ TABLES = {
     "ratios",
     "fundamentals",
     "descriptions",
+    "french_factors",
 }
 
 

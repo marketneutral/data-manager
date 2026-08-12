@@ -102,6 +102,12 @@ def main(argv=None):
     p_sp500 = sub.add_parser("update-sp500", help="S&P500 membership (current + per-member history).")
     p_sp500.add_argument("--db", default=None)
 
+    p_ff = sub.add_parser("update-french-factors",
+                          help="Ken French US daily factor returns (3F / 5F / Mom / ST_Rev / LT_Rev).")
+    p_ff.add_argument("--force", action="store_true", help="re-download even if the site file is unchanged")
+    p_ff.add_argument("--dir", default=None, help="download cache dir (default ~/.prime/agent/bulk)")
+    p_ff.add_argument("--db", default=None)
+
     p_blk = sub.add_parser("load-bulk", help="Load a downloaded Sharadar bulk zip (tickers/stocks/funds/actions/metrics/sp500/fundamentals).")
     p_blk.add_argument("table", choices=["tickers","stocks","funds","actions","metrics","sp500","fundamentals"])
     p_blk.add_argument("--file", required=True, help="path to the .csv.zip")
@@ -157,6 +163,11 @@ def main(argv=None):
         print(f"ratios:         {cnt('ratios')}")
         print(f"sp500 members:  {n_sp} tickers")
         print(f"universe_pit:   {n_pit} as-of dates built")
+        n_ff = conn.execute("SELECT COUNT(*) FROM french_factors").fetchone()[0]
+        ff_min, ff_max = conn.execute(
+            "SELECT MIN(date), MAX(date) FROM french_factors").fetchone()
+        ff_max = ff_max or "-"
+        print(f"french_factors: {n_ff} rows ({ff_min or '-'} -> {ff_max})")
     elif args.command == "update-universe":
         n = update_universe(conn)
         print(f"Stored {n} universe tickers.")
@@ -246,6 +257,12 @@ def main(argv=None):
     elif args.command == "optimize-db":
         from . import dbopt as OP
         OP.optimize_db(conn, backup_path=args.backup, vacuum=not args.no_vacuum, quick=args.quick)
+    elif args.command == "update-french-factors":
+        from . import factors as FF
+        report = FF.update_french_factors(conn, dest_dir=args.dir or FF.DEFAULT_DIR,
+                                          force=args.force)
+        print(f"French factor rows in db: {report['rows']:,} "
+              f"(downloaded: {report['downloaded']}, skipped: {report['skipped']})")
     elif args.command in ("bulk-download", "bulk-fromzero", "bulk-update"):
         from . import bulk as B
         d = args.dir or B.DEFAULT_DIR

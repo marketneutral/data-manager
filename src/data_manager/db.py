@@ -337,6 +337,19 @@ CREATE TABLE IF NOT EXISTS metrics (
     PRIMARY KEY (ticker, as_of)
 );
 
+CREATE TABLE IF NOT EXISTS french_factors (
+    date   TEXT PRIMARY KEY,   -- trading day YYYY-MM-DD (source datekey is YYYYMMDD)
+    mkt_rf REAL,   -- %/day  market excess return (value-weight CRSP universe minus RF)
+    smb    REAL,   -- %/day  small-minus-big (size)
+    hml    REAL,   -- %/day  high-minus-low book-to-market (value)
+    rmw    REAL,   -- %/day  robust-minus-weak operating profitability
+    cma    REAL,   -- %/day  conservative-minus-aggressive investment
+    mom    REAL,   -- %/day  momentum (prior 2-12 month return)
+    st_rev REAL,   -- %/day  short-term reversal (prior 1-1 month return)
+    lt_rev REAL,   -- %/day  long-term reversal (prior 13-60 month return)
+    rf     REAL    -- %/day  daily risk-free rate (compounds to 1-month T-bill)
+);
+
 CREATE TABLE IF NOT EXISTS universe_pit (
     as_of TEXT, ticker TEXT,
     category TEXT, exchange TEXT, isdelisted TEXT,
