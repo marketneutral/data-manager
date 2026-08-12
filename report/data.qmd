@@ -785,9 +785,9 @@ ax.plot(latest["as_of"], latest["n"], "o", color=RED, ms=5)
 for _, r in anchors.iterrows():
     ax.plot(r["as_of"], r["n"], "o", color=RED, ms=4)
     ax.annotate(f"{r['label']}  {r['n']:,}", (r["as_of"], r["n"]),
-                textcoords="offset points", xytext=(4, 7), fontsize=8, color=RED)
+                textcoords="offset points", xytext=(6, 12), fontsize=8, color=RED)
 ax.annotate(f"{latest['as_of'].date()}  {latest['n']:,}", (latest["as_of"], latest["n"]),
-            textcoords="offset points", xytext=(-4, -14), fontsize=8, color=RED)
+            textcoords="offset points", xytext=(-10, -16), ha="right", fontsize=8, color=RED)
 ax.set_title(f"Investable-universe membership per trading day — {pit_days:,} days, {pit_row:,} stock-days")
 ax.set_xlabel("date"); ax.set_ylabel("members")
 ax.grid(axis="y", alpha=.25)
@@ -834,8 +834,10 @@ ax1.set_ylabel("members"); ax1.grid(axis="y", alpha=.25)
 big = last.sort_values("mcapB", ascending=False).head(8)
 ax2.barh(big["ticker"][::-1], big["mcapB"][::-1], color=SECONDARY, height=0.7)
 ax2.set_title("Top 8 members by market cap")
-ax2.set_xlabel("market cap ($B)"); ax2.grid(axis="x", alpha=.25)
-plt.tight_layout(); plt.show()
+ax2.set_xlabel("mcap ($B)"); ax2.grid(axis="x", alpha=.25)
+plt.tight_layout()
+fig.subplots_adjust(right=0.965)
+plt.show()
 ```
 
 ```{python}
@@ -968,45 +970,49 @@ def fig_price_volume(t, m, px, window_days, mark_bankruptcy=None):
     a1.plot(px["date"], adj, color=SECONDARY, lw=1.0, alpha=.9, label="adjusted close × adjustment")
     for i in split_days(px):
         a1.axvline(px.loc[i, "date"], color=RED, lw=.8, alpha=.7)
-        a1.annotate("split", (px.loc[i, "date"], px["close"].min() * 1.15),
-                    xytext=(3, 6), textcoords="offset points", fontsize=7.5,
-                    color=RED, rotation=90, va="bottom")
+        a1.annotate("split", (px.loc[i, "date"], px["close"].max() * 0.8),
+                    xytext=(5, 8), textcoords="offset points", fontsize=7.5,
+                    color=RED, rotation=90, va="bottom", ha="right")
     if mark_bankruptcy:
         a1.axvline(pd.Timestamp(mark_bankruptcy), color=RED, lw=1.0, ls="--", alpha=.8)
         a1.annotate("bankruptcy filing\n2008-09-15", (pd.Timestamp(mark_bankruptcy), px["close"].max() * 0.6),
                     xytext=(6, -18), textcoords="offset points", fontsize=7.5, color=RED)
     a1.set_yscale("log")
     a1.set_title(f"{t}")
-    a1.set_ylabel("price ($, log)"); a1.legend(frameon=False, fontsize=8); a1.grid(axis="y", alpha=.25)
+    a1.set_ylabel("price (log $)"); a1.legend(frameon=False, fontsize=8, loc="upper left"); a1.grid(axis="y", alpha=.25)
     a2.bar(px["date"], px["volume"], color=TERTIARY, width=1.0)
     a2.set_yscale("log"); a2.set_ylabel("shares traded / day"); a2.grid(axis="y", alpha=.25)
     a2.set_xlabel("date")
-    plt.tight_layout(); plt.show()
+    plt.tight_layout()
+    fig.subplots_adjust(left=0.10)
+    plt.show()
 
-SF1_5 = [("revenue", "revenue ($B)", 1e9), ("netinc", "net income ($B)", 1e9),
-         ("fcf", "free cash flow ($B)", 1e9), ("roe", "ROE (%)", 0.01),
-         ("grossmargin", "gross margin (%)", 0.01)]
+SF1_5 = [("revenue", "rev ($B)", 1e9), ("netinc", "net inc ($B)", 1e9),
+         ("fcf", "FCF ($B)", 1e9), ("roe", "ROE %", 0.01),
+         ("grossmargin", "gross mgn %", 0.01)]
 
 def fig_sf1(t, title):
     rows = q("""SELECT reportperiod, revenue, netinc, fcf, roe, grossmargin
                 FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod""", (t,))
     fs = q("SELECT fiscal_year, f_score FROM fundamentals WHERE ticker=? ORDER BY fiscal_year", (t,))
     n = len(SF1_5) + 1
-    fig, axes = plt.subplots(n, 1, figsize=(8.5, 0.82 * n + 0.5), sharex=True)
+    fig, axes = plt.subplots(n, 1, figsize=(8.5, 0.88 * n + 0.6), sharex=True)
     for ax, (col, lab, scale) in zip(axes, SF1_5):
         x = [str(rp)[:4] for rp in rows["reportperiod"]]
         v = pd.to_numeric(rows[col], errors="coerce") / scale
         ax.plot(x, v, "-o", color=PRIMARY, ms=2.5, lw=1.1)
-        ax.set_ylabel(lab, fontsize=8); ax.grid(axis="y", alpha=.25)
+        ax.set_ylabel(lab, fontsize=7.5); ax.grid(axis="y", alpha=.25)
         ax.set_xlim(-0.5, len(x) - 0.5)
     ax = axes[-1]
     x = [str(fy) for fy in fs["fiscal_year"]]
     ax.bar(x, fs["f_score"], color=SECONDARY, width=0.7)
-    ax.set_ylabel("F-score", fontsize=8); ax.set_ylim(0, 9); ax.grid(axis="y", alpha=.25)
+    ax.set_ylabel("F-score", fontsize=7.5); ax.set_ylim(0, 9); ax.grid(axis="y", alpha=.25)
     ax.set_xlabel("fiscal year")
     axes[0].set_title(title, loc="left", fontsize=10)
     fig.align_ylabels(axes)
-    plt.tight_layout(); plt.show()
+    plt.tight_layout(h_pad=1.4, pad=0.6)
+    fig.subplots_adjust(left=0.115)
+    plt.show()
 
 def tear_stats(t, m, px, up):
     px = px[px.volume > 0].reset_index(drop=True)
