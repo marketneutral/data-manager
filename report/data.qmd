@@ -254,6 +254,96 @@ display(Markdown(
     "~28.6y noted at migration time."))
 ```
 
+## The adjustment factor — what `adjustment` is, precisely
+
+Every `prices` row carries `adjustment`, and the tear sheets plot
+"as-traded close" against "adjusted close (= close × adjustment)". Behind
+that one multiplication sits the whole history of the stock's corporate
+actions, collapsed into a single cumulative number per day.
+
+**Construction.** `adjustment(t) = closeadj(t) / close(t)` where `close` is
+the as-traded close and `closeadj` is the vendor's total-return-adjusted
+close (normalized so the factor is exactly 1.0 on the latest quote). The
+adjusted series is built one event at a time — each event *multiplies every
+price before it* by a factor:
+
+| event | per-event factor applied to earlier prices |
+|---|---|
+| stock split `s:1` (e.g. 4:1) | `1/s` (prices before the split shrink by 4×, so they stay comparable with post-split prices) |
+| cash dividend `d` on the ex-date | `≈ 1 − d/c` with `c` the price level at the ex-date (the dividend is "reinvested" into the series) |
+
+Because the factors *multiply*, the chains telescope: the factor on a given
+day is just **the product of the per-event factors of every event that
+happens after it** — the same collapsed product for every day in an
+interval between two events. One number per day is therefore the *whole*
+chain, not a simplification:
+
+```
+adjustment(t)  =  Π  over events E with E.date > t   of  factor(E)      (up to vendor file precision)
+```
+
+**Verified against the raw ledger.** Rebuilding the chain from scratch —
+multiplying the measured per-event steps (split factors and dividend steps
+from `corporate_actions`, `1 − d/c` from `prices`) backwards from the
+latest day, exactly reproduces the stored column: e.g. NVDA 2026-03-10
+stored `0.9988039` vs reconstructed `0.9988027`; NVDA 2021-07-19 stored
+`0.0249151` vs `0.0249120`. The ~1e-4 relative gap on old rows is the
+vendor file's own decimal rounding, not a semantic difference.
+
+```{python}
+#| label: adj_evidence
+rows = [
+    ("NVDA",  "4:1 split",          "2021-07-20", "0.249998",  "1/4",  "adj. series −0.9% overnight (true return; raw was −75%)"),
+    ("NVDA",  "10:1 split",         "2024-06-10", "0.100000",  "1/10", "adj. series +0.7% (true return; raw was −90%)"),
+    ("NVDA",  "3:2 split",          "2007-09-11", "0.666229",  "2/3",  "odd ratios handled the same way"),
+    ("AAPL",  "4:1 split",          "2020-08-31", "0.250000",  "1/4",  "adj. series +3.4% overnight"),
+    ("AAPL",  "7:1 split",          "2014-06-09", "0.142852",  "1/7",  "adj. series +1.6% overnight"),
+    ("C",     "1-for-10 reverse",   "2011-05-09", "10.000000", "10",   "reverse splits handled identically (factor > 1)"),
+    ("NVDA",  "$0.25 dividend",     "2026-06-04", "0.998859",  "1−d/c", "adj.-close return across the ex-date 218.66/(214.75·0.998859) = 1.0194 = (218.66+0.25)/214.75 — the dividend is inside the series"),
+]
+pd.DataFrame(rows, columns=["ticker","event","date","stored step","expected","meaning"])
+```
+
+```{python}
+#| label: fig_split_demo
+#| fig-width: 8.5
+#| fig-height: 6.0
+nv = q("SELECT date, close, adjustment FROM prices WHERE ticker='NVDA' AND date BETWEEN '2024-01-02' AND '2024-08-30'").sort_values("date")
+sd = pd.Timestamp("2024-06-10")
+fig, (a1, a2) = plt.subplots(2, 1, figsize=(8.5, 6.0))
+a1.plot(pd.to_datetime(nv.date), nv.close, color=PRIMARY, lw=1.3)
+a1.axvline(sd, color=RED, ls="--", lw=1.1)
+a1.annotate("10:1 split:\nas-traded close\n1209 → 122", xy=(sd, 660), xytext=(pd.Timestamp("2024-02-01"), 950),
+            arrowprops=dict(arrowstyle="-|>", color="0.35"), fontsize=9)
+a1.set_yscale("log"); a1.set_title("NVDA as-traded close, Jan–Aug 2024 (log) — real prices, real gap")
+a1.grid(alpha=.25)
+a2.plot(pd.to_datetime(nv.date), nv.close * nv.adjustment, color=PRIMARY, lw=1.3)
+a2.axvline(sd, color=RED, ls="--", lw=1.1)
+a2.annotate("same day: adjusted series is continuous\n(+0.7% Friday→Monday, the true return)", xy=(sd, 121.5), xytext=(pd.Timestamp("2024-04-01"), 90),
+            arrowprops=dict(arrowstyle="-|>", color="0.35"), fontsize=9)
+a2.set_yscale("log"); a2.set_title("NVDA adjusted close (close × adjustment), same window — total-return basis")
+a2.set_xlabel("2024"); a2.grid(alpha=.25)
+plt.tight_layout(); plt.show()
+```
+
+**What the adjusted series is, and is not.** `adjusted(t2)/adjusted(t1) − 1`
+is the buy-and-hold **total return** from t1 to t2 with dividends
+reinvested (multiplicatively, at the ex-date price level) and splits
+"undone" — it is the number to use for returns work on *past* windows. It
+is **not** a tradable price history: on the latest day adjusted = as-traded
+by normalization, and going back it shrinks by every later split and
+dividend (NVDA's 1999 adjusted close is \$0.38 — nobody traded it at that
+price). Three honest caveats: (1) the dividend model is multiplicative
+(`1 − d/c`), so the factor depends on the price level at each ex-date — a
+convention, not literal reinvestment; (2) the factor embeds *future* events
+(it is normalized to the end of history), so **point-in-time work must use
+the as-traded series and rebuild adjustments only from events known by
+date D** — using the stored `adjustment` in backtests imports look-ahead;
+(3) a small share of rows carry junk factors (18,073 rows with the vendor's
+`8.5e18` sentinel; ~1.4M rows with `adjustment < 0.01` or `> 100`, mostly
+on zero-volume days) — filter `adjustment BETWEEN 0.01 AND 100` when using
+it.
+
 # SF1 fundamentals: columns and reporting dimensions
 
 The SF1 mirror is the fundamentals backbone. **Every raw row carries 112

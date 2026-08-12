@@ -310,3 +310,23 @@ correct order / no deletes at all).
   long-title figures overflow).
 - eqrm references purged repo-wide (README, NOTES, archive, report,
   code-comments) — other projects are never named in this repo.
+
+## Adjustment methodology verified (2026-08-12; report §3)
+
+- `adjustment(t) = closeadj(t)/close(t)` — vendor total-return adjusted
+  close over as-traded close, normalized to 1.0 at the latest quote.
+- It is the CUMULATIVE multiplicative chain: per event after day t
+  (split s:1 → factor 1/s; cash dividend d → ≈ 1−d/c), all multiplied.
+  One number per day is the collapsed product (telescoping) — rebuilt from
+  corporate_actions + prices matches the stored column to vendor precision
+  (~1e-4 rel on 2000-era rows, ~1e-6 recent).
+- Evidence: NVDA split steps 0.249998/0.100000, C reverse 1:10 step
+  10.000000, AAPL 1/4 & 1/7; adjusted close continuous across every split;
+  dividend TR identity NVDA 2026-06-04: adj ratio = (218.66+0.25)/214.75.
+- Caveats: multiplicative dividend convention (price-level dependent);
+  adjusted embeds FUTURE events → PIT work must use as-traded and rebuild
+  as-of adjustments; junk factors (8.5e18 sentinel ×18,073; ~1.4M rows
+  outside [0.01, 100]) → screen `adjustment BETWEEN 0.01 AND 100`.
+- New report §3 subsection "The adjustment factor — what `adjustment` is,
+  precisely" + fig_split_demo (NVDA 2024 split: raw gap vs continuous
+  adjusted).

@@ -65,14 +65,27 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 ## Prices: the adjustment contract (critical)
 
 * `close` is the **as-traded** price (it gaps at stock splits).
-* `adjustment = closeadj / closeunadj` (split+dividend total-return factor);
-  `adjusted = raw × adjustment`. For OHLC: `open/high/low` are stored
-  *as-traded* too; multiply any of them by `adjustment` for the adjusted
-  basis. Volume stays as traded.
-* **For returns / factors use `close` directly.** Apply `adjustment` only
-  for total-return series, and screen: `volume = 0` (5.5% of rows are
-  no-trade days) and `adjustment` outliers (`>100` or `<0.01`; ~301k rows
-  carry the 8.5e18 sentinel on no-trade days).
+* `adjustment = closeadj / close(t)` where `closeadj` is the vendor's
+  total-return-adjusted close, normalized so `adjustment = 1.0` on the
+  latest quote. Apply `adjusted = raw × adjustment` for any OHLC field
+  (volume stays as traded).
+* **Construction (verified 2026-08-12):** adjustment is a *cumulative,
+  multiplicative* chain — one factor per corporate action after the day
+  (split `s:1` → `1/s`; cash dividend `d` on ex-date → `≈ 1 - d/c`), all
+  multiplied together. The single stored number IS the whole collapsed
+  product (it telescopes): rebuilding the chain from `corporate_actions` +
+  `prices` reproduces the stored column to vendor precision (~1e-4 rel on
+  old rows, ~1e-6 recent — their decimal rounding).
+* **Meaning:** `adjusted(t2)/adjusted(t1) - 1` = buy-and-hold total return
+  with dividends reinvested (multiplicatively at the ex-date price — a
+  convention, not literal reinvestment). The adjusted series is NOT a
+  tradable price and it embeds FUTURE events (normalized to end of
+  history): for point-in-time work use as-traded `close` and rebuild
+  adjustments only from events known by date D, or you import look-ahead.
+* **Screens when using `adjustment`:** keep `adjustment BETWEEN 0.01 AND
+  100` (18,073 rows carry the 8.5e18 vendor sentinel; ~1.4M junk-factor
+  rows total, mostly zero-volume days); also drop `volume = 0` (5.5% of
+  rows) for return work.
 * Convenience accessor: `adjusted_prices(ticker, start=None, end=None)` in
   `data_manager.universe` → dicts with `date/open/high/low/close/volume/
   adjustment/adjusted_open.../adjusted_close`.
