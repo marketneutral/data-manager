@@ -110,3 +110,71 @@ def test_optimize_db(tmp_path):
     assert r["backup"].endswith("o.bak.db")
     assert "idx_prices_date" in r["indexes"]
     c.close()
+
+
+def test_pit_history_profile_is_latest_quote_not_run_start(tmp_path):
+    """universe_pit profile (price/mcap/dvol) on member day D must be the most
+    recent valid quote as of D, not the run-start quote (bug fixed 2026-08-12:
+    a continuous 1998->now run used to carry its opening quote forever)."""
+    from data_manager import db
+    from data_manager.universe import build_universe_pit_history
+
+    c = db.connect(tmp_path / "pit.db")
+    days = ["1998-01-%02d" % d for d in (2, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 20)]
+    base = dict(category="Domestic Common Stock", exchange="NYSE", isdelisted="N",
+                sector="Technology", industry="Software", firstpricedate="1998-01-02",
+                lastpricedate="1998-01-20", name="T", cusips="", siccode="", sicsector="",
+                sicindustry="", figi="", famaindustry="", scalemarketcap="", scalerevenue="",
+                relatedtickers="", currency="USD", location="", firstadded="",
+                firstquarter="", lastquarter="", secfilings="", companysite="",
+                lastupdated="", permaticker="", table="stocks")
+    def add_stock(t):
+        c.execute('INSERT OR REPLACE INTO securities_master (ticker, category, exchange,'
+                  ' isdelisted, sector, industry, firstpricedate, lastpricedate, name,'
+                  ' permaticker, "table") VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                  (t, base["category"], base["exchange"], base["isdelisted"],
+                   base["sector"], base["industry"], "1998-01-02", "1998-01-20", "T",
+                   t, "stocks"))
+    def add_price(t, d, close, volume=1_000_000):
+        c.execute("INSERT OR REPLACE INTO prices (ticker,date,close,volume,adjustment)"
+                  " VALUES (?,?,?,?,1.0)", (t, d, close, volume))
+    def add_shares(t, asof, n=10_000_000):
+        c.execute("INSERT OR REPLACE INTO sf1 (ticker,dimension,date,reportperiod,shareswa)"
+                  " VALUES (?,?,?,?,?)", (t, "ARQ", asof, asof, n))
+
+    # CONT: continuous quotes, price climbing 50, 50.5, ...
+    add_stock("CONT")
+    add_shares("CONT", "1998-01-02")
+    for i, d in enumerate(days):
+        add_price("CONT", d, 50.0 + 0.5 * i)
+    # GAP: quote run 1 (05..09), then a >10-calendar-day hole, then run 2 (26..30)
+    add_stock("GAP")
+    add_shares("GAP", "1998-01-02")
+    for d, v in [("1998-01-05", 40.0), ("1998-01-06", 41.0), ("1998-01-07", 42.0),
+                 ("1998-01-08", 43.0), ("1998-01-09", 44.0)]:
+        add_price("GAP", d, v)
+    for i, d in enumerate(["1998-01-26", "1998-01-27", "1998-01-28", "1998-01-29", "1998-01-30"]):
+        add_price("GAP", d, 50.0 + i)
+    c.commit()
+
+    n = build_universe_pit_history(
+        c, min_price=1.0, min_mcap=100_000_000, min_dvol=1_000_000,
+        lookback=5, min_dvol_days=3, max_quote_age=10, types=("Domestic Common Stock",))
+    assert n > 0
+
+    # CONT: profile refreshes mid-run (a rising-price stock can't keep its opening quote)
+    first = c.execute("SELECT price, mcap FROM universe_pit WHERE ticker='CONT' AND as_of='1998-01-06'").fetchone()
+    mid = c.execute("SELECT price, mcap FROM universe_pit WHERE ticker='CONT' AND as_of='1998-01-15'").fetchone()
+    lastd = c.execute("SELECT price, mcap FROM universe_pit WHERE ticker='CONT' AND as_of='1998-01-20'").fetchone()
+    assert first[0] == 51.0 and abs(first[1] - 51.0 * 10_000_000) < 1  # 01-06 close
+    assert mid[0] == 54.5 and abs(mid[1] - 54.5 * 10_000_000) < 1      # 01-15 close
+    assert lastd[0] == 55.5 and abs(lastd[1] - 55.5 * 10_000_000) < 1  # 01-20 close
+
+    # GAP: membership breaks across the hole; stale-day profile = last quote of run 1
+    none = c.execute("SELECT COUNT(*) FROM universe_pit WHERE ticker='GAP' AND as_of='1998-01-20'").fetchone()[0]
+    stale = c.execute("SELECT price FROM universe_pit WHERE ticker='GAP' AND as_of='1998-01-16'").fetchone()
+    back = c.execute("SELECT price FROM universe_pit WHERE ticker='GAP' AND as_of='1998-01-28'").fetchone()
+    assert none == 0
+    assert stale[0] == 44.0    # last quote of run 1 (01-09), carried into the tail
+    assert back[0] == 52.0     # run 2 profile reflects its own quotes
+    c.close()

@@ -262,3 +262,32 @@ correct order / no deletes at all).
   tail; use as-traded close for returns); 2 rows have close<=0; GICS
   classifications cover only 2,589 of 21,960 stocks (live coverage check
   still open).
+
+## PIT profile bug found & fixed (2026-08-12)
+
+- BUG: build_universe_pit_history stored the RUN-START quote's price/mcap/dvol for
+  the whole validity run. A continuously trading name has ONE run 1998->now, so
+  AAPL carried $19.75 (its 1998 close) as its 2026-08-11 profile, MSFT $131.13,
+  NVDA $19.25. Membership DATES were correct; the attached profile was not.
+  Detected while sanity-checking mcap analytics for the new report (top-12 by
+  mcap looked wrong: 'SPCX' above NVDA).
+- FIX: universe.py now carries the MOST RECENT valid quote <= each stored member
+  day (per-day pointer over the run's valid rows). Regression test:
+  tests/test_db.py::test_pit_history_profile_is_latest_quote_not_run_start.
+- REBUILT: `data-manager build-universe-pit --history` (13,459,809 stock-days,
+  7,187 days) + optimize-db (backup ~/.prime/agent/data_manager.pre-pitfix.db,
+  quick_check ok, VACUUM 140s, 15.94GB). Verify: AAPL 2026-08-11 now price
+  $304.91 / mcap $4,469B; 1998-01-14 still $19.75.
+- Old backups data_manager.pre-optimize.db (17.1GB) and pre-pitfix.db contain the
+  BUGGY universe_pit; keep only if the bad profiles are ever needed.
+
+## Reporting v2 (2026-08-12)
+
+- report/data.qmd rewritten: raw-vs-derived lineage tables (with rebuild map and
+  the prices.adjustment contract), full SF1 reporting-dimension reference
+  (AR=As-Reported, MR=Most-Recent-Reported; Y/Q/T) + 112-column indicator
+  dictionary (vendor names, grouped by family), PIT universe analysis (mcap bins,
+  threshold sensitivity, sector/industry coverage, per-year median mcap), tear
+  sheets for mega/mid/small (picked dynamically), GICS gap, freshness/quality.
+- Palette retired navy/gold -> graphite ink + burnt-orange + sage + slate
+  (custom.scss $primary #c8502d; report.mplstyle).

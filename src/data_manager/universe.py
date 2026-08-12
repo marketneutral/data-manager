@@ -868,22 +868,31 @@ def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
                 valid.append((d, close, close * swa, dv, wct))
         if not valid:
             continue
-        # merge validity runs: membership days for row i = [d_i, min(d_{i+1}-1, d_i+max_quote_age)]
-        runs = []
+        # merge validity runs: membership days for row i = [d_i, min(d_{i+1}, d_i+max_quote_age)]
+        runs = []   # each: [run_start, run_end, [valid tuples inside the run]]
         for i, (d, close, mcap, dv, dct) in enumerate(valid):
             nxt = valid[i + 1][0] if i + 1 < len(valid) else (last or trading[-1])
             end = min(nxt, _add_days(d, max_quote_age))  # calendar-day cap
             if runs and runs[-1][1] >= d:
                 runs[-1][1] = max(runs[-1][1], end)
+                runs[-1][2].append((d, close, mcap, dv, dct))
             else:
-                runs.append([d, end, close, mcap, dv, dct])
-        # expand runs onto the trading calendar
-        for d0, d1, close, mcap, dv, dct in runs:
+                runs.append([d, end, [(d, close, mcap, dv, dct)]])
+        # expand runs onto the trading calendar. The stored profile (price,
+        # mcap, dvol) is the MOST RECENT valid quote as of each member day --
+        # NOT the run-start quote (a continuous 1998->now run must not carry
+        # its 1998 price forward; bug fixed 2026-08-12).
+        for d0, d1, rvalid in runs:
             i0 = bisect.bisect_left(trading, d0)
             i1 = bisect.bisect_right(trading, d1)
             n_members += max(0, i1 - i0)
+            j = 0
             for idx in range(i0, i1):
-                rows.append((trading[idx], ticker, category, exchange, isdelisted,
+                day = trading[idx]
+                while j + 1 < len(rvalid) and rvalid[j + 1][0] <= day:
+                    j += 1
+                _, close, mcap, dv, dct = rvalid[j]
+                rows.append((day, ticker, category, exchange, isdelisted,
                              sector, industry, close, mcap, dv, dct, first, last))
                 if len(rows) >= chunk:
                     flush()
