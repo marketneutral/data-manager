@@ -63,6 +63,32 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | snapshots | ledger | id | per-pull record (source, pulled_at, as_of, row_count) |
 | descriptions | raw (bulk) | (table_name, indicator) | Sharadar's field dictionary: title + sentence-level definition + unit type for every column of every vendor table (373 rows, 17 datasets) |
 
+## The data dictionary is IN the database — read `descriptions`
+
+Never guess what a column means. Every column definition is stored in the
+`descriptions` table (Sharadar's own field dictionary, 373 rows / 17 vendor
+datasets, refreshed by `bulk_update`):
+
+```sql
+SELECT table_name, indicator, title, description, unittype
+FROM descriptions
+WHERE table_name = 'SF1' AND indicator = 'revenue';
+```
+
+- Covers all 7 raw warehouse tables: `securities_master` (TICKERS),
+  `corporate_actions` (ACTIONS), `sp500_membership` (SP500), `metrics`
+  (METRICS), `sf1` (SF1 — including the 76 fields stored inside
+  `sf1.data`), `prices` (SEP/SFP bulk price columns), plus the vendor's
+  meta catalogs `TABLE-DESCRIPTIONS` and `ACTIONTYPES`.
+- The 7 derived/ledger tables (`fundamentals`, `quarterly_statements`,
+  `ratios`, `universe_pit`, `classifications`, `universe`, `snapshots`)
+  are NOT vendor fields — their definitions are written by this repo in
+  `docs/data_dictionary.md` / `docs/data_dictionary.json` (generated from
+  this table; keep them in sync when the schema or semantics change).
+- If a column has no `descriptions` row, its definition is under "this
+  repo (local semantics)" in `docs/data_dictionary.md` — check there
+  before inventing semantics.
+
 ## securities_master & corporate_actions quick reference
 
 * `securities_master`: one row per instrument (31,742; stocks 21,960 /
@@ -218,4 +244,4 @@ of members across all days without the as_of predicate.
 | investable members on D | `SELECT * FROM universe_pit WHERE as_of=?` (uses `idx_pit_asof`) |
 | fundamentals history | `SELECT * FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod` (+ `data` blob for untyped fields) |
 | delisting evidence | `corporate_actions` rows `action IN ('delisted','bankruptcyliquidation')` |
-| column definition / unit | `SELECT title, description FROM descriptions WHERE table_name=? AND indicator=?` (or `docs/data_dictionary.md` / `.json`) |
+| column definition / unit | `SELECT title, description FROM descriptions WHERE table_name=? AND indicator=?` — see the **"data dictionary is IN the database"** section above; derived-table columns: `docs/data_dictionary.md` |
