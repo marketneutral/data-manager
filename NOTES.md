@@ -367,3 +367,19 @@ correct order / no deletes at all).
   truncated at pandas' default max_colwidth=50 so the full notes column
   (incl. refs) was invisible in HTML. `pd.set_option("display.max_colwidth",
   None)` in setup → full text now renders.
+
+## descriptions table: in-DB vendor data dictionary (2026-08-12)
+
+- Sharadar ships the field definitions AS DATA: the `descriptions` table
+  (table, indicator, isfilter, isprimarykey, title, description, unittype;
+  373 rows, all 17 vendor datasets incl. a per-table and per-action-type
+  catalog). Now integrated into the pipeline: db.py schema, bulkload
+  load_descriptions, bulk.py BULK_TABLES registration (bulk_update keeps it
+  fresh; derive/PIT now trigger only on non-descriptions loads). Loaded
+  into the live DB (373 rows).
+- Generated from it: docs/data_dictionary.md + .json — column-level
+  definitions for all 14 warehouse tables (vendor definitions for the 7
+  raw tables incl. the 76 in-blob SF1 fields; repo-written semantics for
+  the 7 derived/ledger tables). Report §2.1 "Column-level data
+  dictionary" shows the coverage + a live revenue example.
+- Tests: test_load_descriptions_stores_rows; suite now 89 green.

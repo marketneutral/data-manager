@@ -61,6 +61,7 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | universe | derived (iShares IWV) | ticker | legacy R3000 snapshot (superseded by universe_pit) |
 | universe_pit | derived (master+prices+sf1) | (as_of,ticker) | investable membership per trading day |
 | snapshots | ledger | id | per-pull record (source, pulled_at, as_of, row_count) |
+| descriptions | raw (bulk) | (table_name, indicator) | Sharadar's field dictionary: title + sentence-level definition + unit type for every column of every vendor table (373 rows, 17 datasets) |
 
 ## securities_master & corporate_actions quick reference
 
@@ -217,3 +218,4 @@ of members across all days without the as_of predicate.
 | investable members on D | `SELECT * FROM universe_pit WHERE as_of=?` (uses `idx_pit_asof`) |
 | fundamentals history | `SELECT * FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod` (+ `data` blob for untyped fields) |
 | delisting evidence | `corporate_actions` rows `action IN ('delisted','bankruptcyliquidation')` |
+| column definition / unit | `SELECT title, description FROM descriptions WHERE table_name=? AND indicator=?` (or `docs/data_dictionary.md` / `.json`) |

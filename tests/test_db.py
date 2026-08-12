@@ -12,7 +12,25 @@ TABLES = {
     "quarterly_statements",
     "ratios",
     "fundamentals",
+    "descriptions",
 }
+
+
+def test_load_descriptions_stores_rows(conn, tmp_path):
+    """The vendor field-dictionary table loads into `descriptions`."""
+    import io, zipfile
+    from data_manager import bulkload
+    csv_ = ("table,indicator,isfilter,isprimarykey,title,description,unittype\n"
+            "SF1,revenue,N,N,Revenues,The amount of Revenue recognised,currency\n"
+            "SEP,close,N,N,Close Price - Split Adjusted,The official exchange close price,text\n")
+    p = tmp_path / "descriptions.csv.zip"
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("descriptions.csv", csv_)
+    n = bulkload.load_descriptions(str(p), conn)
+    assert n == 2
+    rows = conn.execute(
+        "SELECT table_name, indicator, title FROM descriptions ORDER BY indicator").fetchall()
+    assert {r["title"] for r in rows} == {"Revenues", "Close Price - Split Adjusted"}
 
 
 def test_connect_creates_all_tables(db_path):

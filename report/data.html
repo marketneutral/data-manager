@@ -2368,7 +2368,10 @@ window.Quarto = {
    
   <ul class="collapse">
   <li><a href="#warehouse-at-a-glance" id="toc-warehouse-at-a-glance" class="nav-link active" data-scroll-target="#warehouse-at-a-glance"><span class="header-section-number">1</span> Warehouse at a glance</a></li>
-  <li><a href="#raw-sharadar-tables-vs-locally-derived-tables" id="toc-raw-sharadar-tables-vs-locally-derived-tables" class="nav-link" data-scroll-target="#raw-sharadar-tables-vs-locally-derived-tables"><span class="header-section-number">2</span> Raw Sharadar tables vs locally derived tables</a></li>
+  <li><a href="#raw-sharadar-tables-vs-locally-derived-tables" id="toc-raw-sharadar-tables-vs-locally-derived-tables" class="nav-link" data-scroll-target="#raw-sharadar-tables-vs-locally-derived-tables"><span class="header-section-number">2</span> Raw Sharadar tables vs locally derived tables</a>
+  <ul class="collapse">
+  <li><a href="#column-level-data-dictionary" id="toc-column-level-data-dictionary" class="nav-link" data-scroll-target="#column-level-data-dictionary"><span class="header-section-number">2.1</span> Column-level data dictionary</a></li>
+  </ul></li>
   <li><a href="#securities-master-corporate-actions" id="toc-securities-master-corporate-actions" class="nav-link" data-scroll-target="#securities-master-corporate-actions"><span class="header-section-number">3</span> Securities master &amp; corporate actions</a>
   <ul class="collapse">
   <li><a href="#the-securities-master-securities_master-31742-rows" id="toc-the-securities-master-securities_master-31742-rows" class="nav-link" data-scroll-target="#the-securities-master-securities_master-31742-rows"><span class="header-section-number">3.1</span> The securities master (<code>securities_master</code>, 31,742 rows)</a></li>
@@ -2674,6 +2677,200 @@ window.Quarto = {
 </div>
 <p><strong>Rebuild map</strong> (all local, no API): <code>build-piotroski</code> / <code>build-quarterly</code> / <code>build-ratios</code> / <code>build-universe-pit [--history]</code> under <code>data-manager</code>; a from-zero warehouse rebuild is <code>bulk-fromzero</code> (downloads the zips once, loads, derives, builds PIT, optimizes).</p>
 <p><strong>The <code>prices.adjustment</code> contract.</strong> <code>adjustment</code> satisfies <span class="math inline">\(P^{\mathrm{adj}}_t = P^{\mathrm{as\text{-}traded}}_t \times \mathrm{adjustment}_t\)</span> where <span class="math inline">\(P^{\mathrm{adj}}\)</span> is the split- <em>and</em> dividend-adjusted close (Sharadar <code>closeadj</code>). The as-traded OHLC stored in the table is recovered from the bulk file by scaling the split-adjusted OHLC with the same-row split factor <code>closeunadj/close</code>; therefore <strong><code>close</code> is the true as-traded price</strong> (it gaps at stock splits — see NVDA 2024-06-10 in §7) <strong>and the adjustment factor only matters for total-return series</strong> (§10 quantifies the no-trade and adjustment-tail rows).</p>
+<section id="column-level-data-dictionary" class="level2" data-number="2.1">
+<h2 data-number="2.1" class="anchored" data-anchor-id="column-level-data-dictionary"><span class="header-section-number">2.1</span> Column-level data dictionary</h2>
+<p>Sharadar ships the field definitions themselves as a downloadable dataset — the <strong><code>descriptions</code> table</strong> (one row per table + field: <code>table</code>, <code>indicator</code>, <code>isfilter</code>, <code>isprimarykey</code>, <code>title</code>, <code>description</code>, <code>unittype</code>; 373 rows covering all 17 vendor datasets). This warehouse now stores it as the live <code>descriptions</code> table, loaded from the bulk pipeline like any other raw table and refreshed with every <code>bulk_update</code> — so the dictionary in the database is the vendor’s own, versioned with each pull.</p>
+<div id="cell-dict_counts" class="cell" data-execution_count="6">
+<div id="dict_counts" class="cell-output cell-output-display" data-execution_count="6">
+<div>
+
+
+<table class="dataframe caption-top table table-sm table-striped small" data-border="1">
+<thead>
+<tr class="header">
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th">vendor_table</th>
+<th data-quarto-table-cell-role="th">fields</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">0</th>
+<td>SF1</td>
+<td>112</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">1</th>
+<td>EVENTCODES</td>
+<td>37</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">2</th>
+<td>SF3A</td>
+<td>29</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">3</th>
+<td>SF3B</td>
+<td>28</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">4</th>
+<td>TICKERS</td>
+<td>28</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">5</th>
+<td>SF2</td>
+<td>24</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">6</th>
+<td>METRICS</td>
+<td>22</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">7</th>
+<td>ACTIONTYPES</td>
+<td>19</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">8</th>
+<td>TABLE-DESCRIPTIONS</td>
+<td>14</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">9</th>
+<td>DAILY</td>
+<td>10</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">10</th>
+<td>SEP</td>
+<td>10</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">11</th>
+<td>SFP</td>
+<td>10</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">12</th>
+<td>ACTIONS</td>
+<td>7</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">13</th>
+<td>INDICATORS</td>
+<td>7</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">14</th>
+<td>SP500</td>
+<td>7</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">15</th>
+<td>SF3</td>
+<td>6</td>
+</tr>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">16</th>
+<td>EVENTS</td>
+<td>3</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<p>Every dictionary row carries a full sentence-level definition — e.g.:</p>
+<div id="cell-dict_sample" class="cell" data-execution_count="7">
+<div id="dict_sample" class="cell-output cell-output-display" data-execution_count="7">
+<div>
+
+
+<table class="dataframe caption-top table table-sm table-striped small" data-border="1">
+<thead>
+<tr class="header">
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th">table_name</th>
+<th data-quarto-table-cell-role="th">indicator</th>
+<th data-quarto-table-cell-role="th">title</th>
+<th data-quarto-table-cell-role="th">description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">0</th>
+<td>SF1</td>
+<td>revenue</td>
+<td>Revenues</td>
+<td>[Income Statement] The amount of Revenue recognised from goods sold; services rendered; insurance premiums; or other activities that constitute an ear</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+<col style="width: 25%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>our table</th>
+<th>vendor dictionary source</th>
+<th>our table</th>
+<th>vendor dictionary source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>securities_master</code></td>
+<td>TICKERS</td>
+<td><code>fundamentals</code> (derived)</td>
+<td>this repo</td>
+</tr>
+<tr class="even">
+<td><code>corporate_actions</code></td>
+<td>ACTIONS</td>
+<td><code>quarterly_statements</code> (derived)</td>
+<td>this repo</td>
+</tr>
+<tr class="odd">
+<td><code>sp500_membership</code></td>
+<td>SP500</td>
+<td><code>ratios</code> (derived)</td>
+<td>this repo</td>
+</tr>
+<tr class="even">
+<td><code>metrics</code></td>
+<td>METRICS (19 of 22 stored)</td>
+<td><code>universe_pit</code> (derived)</td>
+<td>this repo</td>
+</tr>
+<tr class="odd">
+<td><code>sf1</code></td>
+<td>SF1 (29 typed + 76 in <code>data</code> blob)</td>
+<td><code>classifications</code>, <code>universe</code></td>
+<td>this repo</td>
+</tr>
+<tr class="even">
+<td><code>prices</code></td>
+<td>SEP/SFP bulk price columns</td>
+<td><code>snapshots</code> (ledger)</td>
+<td>this repo</td>
+</tr>
+</tbody>
+</table>
+<p>The full column-level dictionary for all 14 tables — vendor definitions <em>and</em> the derived-table semantics written from this repo’s code — is in <strong><code>docs/data_dictionary.md</code></strong> (+ machine-readable <code>docs/data_dictionary.json</code>), generated from the in-DB <code>descriptions</code> table. The SF1 appendix in this report shows the same 112-field dictionary grouped by family. Vendor datasets we do <strong>not</strong> store: <code>SF2</code> (insider holdings), <code>SF3/SF3A/SF3B</code> (institutional investors), <code>EVENTS</code>/<code>EVENTCODES</code> (material events), <code>DAILY</code> (daily mcap/EV/PE metrics — not the OHLC table), and the meta-tables <code>INDICATORS</code>, <code>ACTIONTYPES</code>, <code>TABLE-DESCRIPTIONS</code> (all still present inside <code>descriptions</code> if ever needed).</p>
+</section>
 </section>
 <section id="securities-master-corporate-actions" class="level1" data-number="3">
 <h1 data-number="3"><span class="header-section-number">3</span> Securities master &amp; corporate actions</h1>
@@ -2681,8 +2878,8 @@ window.Quarto = {
 <section id="the-securities-master-securities_master-31742-rows" class="level2" data-number="3.1">
 <h2 data-number="3.1" class="anchored" data-anchor-id="the-securities-master-securities_master-31742-rows"><span class="header-section-number">3.1</span> The securities master (<code>securities_master</code>, 31,742 rows)</h2>
 <p>One row per instrument — US-listed stocks, ADRs, preferred, warrants, and funds — the vendor’s universe cube. The primary key is <strong><code>permaticker</code></strong> (the vendor’s stable internal id); <code>ticker</code> is the instrument’s <strong>current / last symbol</strong>. This matters: Lehman’s master row is <code>LEHMQ</code>, not <code>LEH</code> — the historical symbols live only in <code>corporate_actions</code> ticker-change rows, so never assume <code>ticker</code> was valid throughout the price history.</p>
-<div id="cell-master_counts" class="cell" data-execution_count="6">
-<div id="master_counts" class="cell-output cell-output-display" data-execution_count="6">
+<div id="cell-master_counts" class="cell" data-execution_count="8">
+<div id="master_counts" class="cell-output cell-output-display" data-execution_count="8">
 <div>
 
 
@@ -2720,8 +2917,8 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-master_snapshot" class="cell" data-execution_count="7">
-<div id="master_snapshot" class="cell-output cell-output-display" data-execution_count="7">
+<div id="cell-master_snapshot" class="cell" data-execution_count="9">
+<div id="master_snapshot" class="cell-output cell-output-display" data-execution_count="9">
 <div>
 
 
@@ -2879,8 +3076,8 @@ window.Quarto = {
 </tr>
 </tbody>
 </table>
-<div id="cell-master_exchanges" class="cell" data-execution_count="8">
-<div id="master_exchanges" class="cell-output cell-output-display" data-execution_count="8">
+<div id="cell-master_exchanges" class="cell" data-execution_count="10">
+<div id="master_exchanges" class="cell-output cell-output-display" data-execution_count="10">
 <div>
 
 
@@ -2933,8 +3130,8 @@ window.Quarto = {
 <section id="corporate-actions-corporate_actions-670752-rows" class="level2" data-number="3.2">
 <h2 data-number="3.2" class="anchored" data-anchor-id="corporate-actions-corporate_actions-670752-rows"><span class="header-section-number">3.2</span> Corporate actions (<code>corporate_actions</code>, 670,752 rows)</h2>
 <p>One row per corporate event. The key is <code>(ticker, date, action)</code> — the same ticker can have several events on one date (e.g. NVDA split 2024-06-10 and dividend 2024-06-11 the next day). Every row carries <code>ticker</code>, <code>date</code>, <code>action</code>, <code>name</code>, plus two “contra” columns (<code>contraticker</code>, <code>contraname</code>) for events that reference a second instrument.</p>
-<div id="cell-action_counts" class="cell" data-execution_count="9">
-<div id="action_counts" class="cell-output cell-output-display" data-execution_count="9">
+<div id="cell-action_counts" class="cell" data-execution_count="11">
+<div id="action_counts" class="cell-output cell-output-display" data-execution_count="11">
 <div>
 
 
@@ -3152,8 +3349,8 @@ window.Quarto = {
 </tr>
 </tbody>
 </table>
-<div id="cell-action_samples" class="cell" data-execution_count="10">
-<div id="action_samples" class="cell-output cell-output-display" data-execution_count="10">
+<div id="cell-action_samples" class="cell" data-execution_count="12">
+<div id="action_samples" class="cell-output cell-output-display" data-execution_count="12">
 <div>
 
 
@@ -3277,7 +3474,7 @@ window.Quarto = {
 <section id="price-coverage-depth" class="level1" data-number="4">
 <h1 data-number="4"><span class="header-section-number">4</span> Price coverage &amp; depth</h1>
 <p>Daily as-traded OHLCV, survivorship-free (delisted names stay in the table). The stocks-vs-funds split uses the bulk-file origin (<code>securities_master.table</code>).</p>
-<div id="cell-fig_coverage" class="cell" data-fig-height="7.4" data-fig-width="8.5" data-execution_count="12">
+<div id="cell-fig_coverage" class="cell" data-fig-height="7.4" data-fig-width="8.5" data-execution_count="14">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3286,7 +3483,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-bounds_prose" class="cell" data-execution_count="13">
+<div id="cell-bounds_prose" class="cell" data-execution_count="15">
 <div id="bounds_prose" class="cell-output cell-output-display cell-output-markdown">
 <p>Stocks are continuous from <strong>1997-01</strong> (46,263,130 rows), funds from <strong>1997-01</strong> (15,475,363 rows). Stock coverage runs <strong>~8,000–9,000 quoted tickers/year from 1998 onward</strong> (delisted names included, so yearly counts are <em>quoted</em> securities, not survivors); fund coverage grows from a few hundred to <strong>6,434</strong> tickers after 2010. The 8,391-row 1997 sliver is a bulk-file edge (pre-window rows for a handful of names), consistent with the Sharadar per-ticker window cap of ~28.6y noted at migration time.</p>
 </div>
@@ -3320,8 +3517,8 @@ window.Quarto = {
 <p>Because the factors <em>multiply</em>, the chains telescope: the factor on a given day is just <strong>the product of the per-event factors of every event that happens after it</strong> — the same collapsed product for every day in an interval between two events. One number per day is therefore the <em>whole</em> chain, not a simplification:</p>
 <pre><code>adjustment(t)  =  Π  over events E with E.date &gt; t   of  factor(E)      (up to vendor file precision)</code></pre>
 <p><strong>Verified against the raw ledger.</strong> Rebuilding the chain from scratch — multiplying the measured per-event steps (split factors and dividend steps from <code>corporate_actions</code>, <code>1 − d/c</code> from <code>prices</code>) backwards from the latest day, exactly reproduces the stored column: e.g. NVDA 2026-03-10 stored <code>0.9988039</code> vs reconstructed <code>0.9988027</code>; NVDA 2021-07-19 stored <code>0.0249151</code> vs <code>0.0249120</code>. The ~1e-4 relative gap on old rows is the vendor file’s own decimal rounding, not a semantic difference.</p>
-<div id="cell-adj_evidence" class="cell" data-execution_count="14">
-<div id="adj_evidence" class="cell-output cell-output-display" data-execution_count="14">
+<div id="cell-adj_evidence" class="cell" data-execution_count="16">
+<div id="adj_evidence" class="cell-output cell-output-display" data-execution_count="16">
 <div>
 
 
@@ -3407,7 +3604,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-fig_split_demo" class="cell" data-fig-height="6" data-fig-width="8.5" data-execution_count="15">
+<div id="cell-fig_split_demo" class="cell" data-fig-height="6" data-fig-width="8.5" data-execution_count="17">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3475,8 +3672,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 <p><strong>Step 3 — the fix is one division, not a rebuild.</strong> All the as-of-<code>D</code> information is already in the stored column. The point-in-time-correct total-return level at <code>t</code>, using only events known by <code>D</code>, is:</p>
 <pre><code>adjusted-PIT(t; D) = close(t) × adjustment(t) / adjustment(D)</code></pre>
 <p>At <code>t = D</code> this equals the as-traded close by construction; at <code>t &lt; D</code> it folds in exactly the splits and dividends inside <code>(t, D]</code> and nothing after. The report’s accessor <code>universe.adjusted_prices(..., asof=D)</code> does this for you (and tests pin the behaviour; 88 green). If you read SQL directly, rebase with <code>adjustment / (SELECT adjustment FROM prices WHERE ticker=? AND date&lt;=? ORDER BY date DESC LIMIT 1)</code>.</p>
-<div id="cell-pit_adjust_verify" class="cell" data-execution_count="16">
-<div id="pit_adjust_verify" class="cell-output cell-output-display" data-execution_count="16">
+<div id="cell-pit_adjust_verify" class="cell" data-execution_count="18">
+<div id="pit_adjust_verify" class="cell-output cell-output-display" data-execution_count="18">
 <div>
 
 
@@ -3582,8 +3779,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </tbody>
 </table>
 <p><strong>Practical rules.</strong> Use <strong>AR*</strong> for point-in-time work (backtests, PIT screens) with the row’s <code>date</code> as the as-of availability date — <code>date &lt;= D</code> is a valid point-in-time filter and is exactly what <code>universe_pit</code> does for shares. Use <strong>MR*</strong> for “what do we believe today” snapshots (<code>build-ratios</code> uses the latest <code>MRY</code> row). Restatements create AR-vs-MR splits on the same report period; when a company catches up after a reporting gap, ARQ may hold several filings for one quarter.</p>
-<div id="cell-sf1_dims" class="cell" data-execution_count="17">
-<div id="sf1_dims" class="cell-output cell-output-display" data-execution_count="17">
+<div id="cell-sf1_dims" class="cell" data-execution_count="19">
+<div id="sf1_dims" class="cell-output cell-output-display" data-execution_count="19">
 <div>
 
 
@@ -3651,8 +3848,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 <section id="indicator-dictionary-summary" class="level2" data-number="5.2">
 <h2 data-number="5.2" class="anchored" data-anchor-id="indicator-dictionary-summary"><span class="header-section-number">5.2</span> Indicator dictionary: summary</h2>
 <p>There are <strong>112 fields</strong> (7 key/date fields + 105 indicators; 29 typed in the <code>sf1</code> table, the rest inside the compressed <code>data</code> blob) grouped into five statement families. The <strong>complete listing, every row shown</strong>, is in the <a href="#appendix--sf1-indicator-dictionary">appendix</a>:</p>
-<div id="cell-sf1_summary" class="cell" data-execution_count="18">
-<div id="sf1_summary" class="cell-output cell-output-display" data-execution_count="18">
+<div id="cell-sf1_summary" class="cell" data-execution_count="20">
+<div id="sf1_summary" class="cell-output cell-output-display" data-execution_count="20">
 <div>
 
 
@@ -3722,12 +3919,12 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 <section id="pit-universe-analysis" class="level1" data-number="6">
 <h1 data-number="6"><span class="header-section-number">6</span> PIT universe analysis</h1>
 <p><code>universe_pit</code> is the locally derived investable universe — one row per (trading day, member) for <strong>7,187 trading days (1998-01-14 → 2026-08-11)</strong>. Algorithm (per ticker, no remote requests): walk its price rows keeping a rolling 20-session dollar-volume window and a pointer to the latest as-reported shares (SF1 ARQ/ARY <code>date ≤ row date</code>); a price row is <em>valid</em> when as-traded close ≥ $2, rolling avg $volume ≥ $5M with ≥ 10 sessions, and PIT mcap = close × shares ≥ $300M. Valid rows merge into runs that extend at most <code>max_quote_age</code> = 10 calendar days past the last fresh quote, then expand onto the global trading calendar.</p>
-<div id="cell-pit_fix" class="cell" data-execution_count="19">
+<div id="cell-pit_fix" class="cell" data-execution_count="21">
 <div id="pit_fix" class="cell-output cell-output-display cell-output-markdown">
 <p><strong>2026-08-12 fix (important).</strong> The original build stored the <em>run-start</em> quote’s price/mcap/dvol for the whole run — a continuously trading name has one run from 1998 to today, so AAPL carried <strong>$19.75 (1998) as its 2026 profile</strong>. Membership dates were correct; the attached profile was not. Rebuilt so each member day carries the <strong>most recent valid quote ≤ that day</strong> (regression-tested; tests/test_db.py). All PIT numbers in this section use the rebuilt table.</p>
 </div>
 </div>
-<div id="cell-fig_pit" class="cell" data-fig-height="3.8" data-fig-width="8.5" data-execution_count="21">
+<div id="cell-fig_pit" class="cell" data-fig-height="3.8" data-fig-width="8.5" data-execution_count="23">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3736,15 +3933,15 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-pit_prose" class="cell" data-execution_count="22">
+<div id="cell-pit_prose" class="cell" data-execution_count="24">
 <div id="pit_prose" class="cell-output cell-output-display cell-output-markdown">
 <p>Membership grows from <strong>776 names (1998-01-14)</strong> to <strong>2,435 (2026-08-11)</strong>; the 2020 crash bottom holds 2,093 members (2020-03-23). The chart’s plateau-and-step shape reflects listing standards (more names pass the $5M-dollar-volume screen over time) rather than definition changes; the full range is re-runnable via <code>build-universe-pit --history</code> with different thresholds.</p>
 </div>
 </div>
 <section id="market-cap-coverage-on-the-latest-day" class="level2" data-number="6.1">
 <h2 data-number="6.1" class="anchored" data-anchor-id="market-cap-coverage-on-the-latest-day"><span class="header-section-number">6.1</span> Market-cap coverage on the latest day</h2>
-<div id="cell-pit_latest" class="cell" data-execution_count="23">
-<div id="pit_latest" class="cell-output cell-output-display" data-execution_count="23">
+<div id="cell-pit_latest" class="cell" data-execution_count="25">
+<div id="pit_latest" class="cell-output cell-output-display" data-execution_count="25">
 <div>
 
 
@@ -3806,7 +4003,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-pit_hist" class="cell" data-fig-height="6.6" data-fig-width="10" data-execution_count="24">
+<div id="cell-pit_hist" class="cell" data-fig-height="6.6" data-fig-width="10" data-execution_count="26">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3815,8 +4012,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-pit_thresholds" class="cell" data-execution_count="25">
-<div id="pit_thresholds" class="cell-output cell-output-display" data-execution_count="25">
+<div id="cell-pit_thresholds" class="cell" data-execution_count="27">
+<div id="pit_thresholds" class="cell-output cell-output-display" data-execution_count="27">
 <div>
 
 
@@ -3893,7 +4090,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-reading_it" class="cell" data-execution_count="26">
+<div id="cell-reading_it" class="cell" data-execution_count="28">
 <div id="reading_it" class="cell-output cell-output-display cell-output-markdown">
 <p><strong>Reading it.</strong> The universe is small-cap-heavy by count (the $300M–1B bucket holds <strong>383 members, 15.7% of names</strong>) but mega-cap-dominated by value: the 126 names ≥ $100B (1.4% of members) hold <strong>69.3% of the total member mcap</strong>. Raising the screen to a Russell-1000-style $5B floor keeps <strong>1,135 names</strong>; a $1B floor keeps <strong>2,052</strong>. The default $300M / $5M-dvol cut admits <strong>2,435</strong> of the 21,960 stocks in the master (11.1%) — the screen is liquidity- and data-driven, so small illiquid names and names without current SF1 shares drop out by design.</p>
 </div>
@@ -3901,7 +4098,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </section>
 <section id="sector-and-industry-coverage-latest-day" class="level2" data-number="6.2">
 <h2 data-number="6.2" class="anchored" data-anchor-id="sector-and-industry-coverage-latest-day"><span class="header-section-number">6.2</span> Sector and industry coverage (latest day)</h2>
-<div id="cell-pit_sector" class="cell" data-execution_count="27">
+<div id="cell-pit_sector" class="cell" data-execution_count="29">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3910,8 +4107,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-pit_industry" class="cell" data-execution_count="28">
-<div id="pit_industry" class="cell-output cell-output-display" data-execution_count="28">
+<div id="cell-pit_industry" class="cell" data-execution_count="30">
+<div id="pit_industry" class="cell-output cell-output-display" data-execution_count="30">
 <div>
 
 
@@ -4003,7 +4200,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-pit_years" class="cell" data-fig-height="6.6" data-fig-width="10" data-execution_count="29">
+<div id="cell-pit_years" class="cell" data-fig-height="6.6" data-fig-width="10" data-execution_count="31">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -4012,7 +4209,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-constitution" class="cell" data-execution_count="30">
+<div id="cell-constitution" class="cell" data-execution_count="32">
 <div id="constitution" class="cell-output cell-output-display cell-output-markdown">
 <p><strong>Constitution (rebuilt, 7,187 days).</strong> 1,958 of the 2,435 members on 2026-08-11 are plain Domestic Common Stock (the rest are Primary-class names); no ETF/ADR/preferred/warrant rows ever enter — the gate fails closed, per the positive inclusion-filter design. Exchange mix on the latest day: NYSE 1,253 / NASDAQ 1,158 / other 24.</p>
 </div>
@@ -4022,12 +4219,12 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 <section id="stock-tear-sheets" class="level1" data-number="7">
 <h1 data-number="7"><span class="header-section-number">7</span> Stock tear sheets</h1>
 <p>One mega, one mid, one small cap — picked below from the rebuilt universe by market-cap bucket, requiring ≥ 12 years of price history and SF1 annual coverage. Each tear has two stacked figures: <strong>(1)</strong> the as-traded close (the raw price, which <em>gaps at splits</em> — the “steps” in the line) together with the fully adjusted series (<code>close × adjustment</code>, continuous) and the daily <strong>share</strong> volume (as-traded shares traded per day, <em>not</em> dollar volume); <strong>(2)</strong> time series of five key SF1 columns plus the F-score. A split is marked where the adjustment factor jumps (|log082 ratio| &gt; 0.9), so the marker is data-driven, not hard-coded.</p>
-<div id="cell-tear_intro" class="cell" data-execution_count="31">
+<div id="cell-tear_intro" class="cell" data-execution_count="33">
 <div id="tear_intro" class="cell-output cell-output-display cell-output-markdown">
 <p>Picked on 2026-08-11: <strong>NVDA</strong> (mega, 28y history), <strong>LVS</strong> (mid, 22y), <strong>STC</strong> (small, 29y).</p>
 </div>
 </div>
-<div id="tear_mega" class="cell" data-execution_count="33">
+<div id="tear_mega" class="cell" data-execution_count="35">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -4258,7 +4455,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="tear_mid" class="cell" data-execution_count="34">
+<div id="tear_mid" class="cell" data-execution_count="36">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -4489,7 +4686,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="tear_small" class="cell" data-execution_count="35">
+<div id="tear_small" class="cell" data-execution_count="37">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -4724,8 +4921,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 <section id="dead-stock-exhibit-lehman-brothers-lehmq" class="level1" data-number="8">
 <h1 data-number="8"><span class="header-section-number">8</span> Dead-stock exhibit: Lehman Brothers (LEHMQ)</h1>
 <p>Survivorship-free data means delisted names stay in the warehouse with their full history. Here is the exhibit: <strong>LEHMAN BROTHERS HOLDINGS INC</strong> was part of the investable PIT universe for <strong>2,689 trading days</strong> — from the first day of the universe (1998-01-14) to <strong>2008-09-22</strong> — and its price rows run to 2008-10-15 (the delisting date) even at $0.08 with 20-30M shares/day trading in the post-bankruptcy market.</p>
-<div id="cell-lehman_data" class="cell" data-execution_count="36">
-<div id="lehman_data" class="cell-output cell-output-display" data-execution_count="36">
+<div id="cell-lehman_data" class="cell" data-execution_count="38">
+<div id="lehman_data" class="cell-output cell-output-display" data-execution_count="38">
 <div>
 
 
@@ -4774,8 +4971,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-lehman_master" class="cell" data-execution_count="37">
-<div id="lehman_master" class="cell-output cell-output-display" data-execution_count="37">
+<div id="cell-lehman_master" class="cell" data-execution_count="39">
+<div id="lehman_master" class="cell-output cell-output-display" data-execution_count="39">
 <div>
 
 
@@ -4839,7 +5036,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="lehman_membership" class="cell" data-execution_count="38">
+<div id="lehman_membership" class="cell" data-execution_count="40">
 <div id="lehman_membership-1" class="cell-output cell-output-display cell-output-markdown">
 <p><strong>Confirmed member of the PIT universe:</strong> 2,689 trading days, 1998-01-14 → 2008-09-22. It was still a member on <strong>2008-09-12</strong> at $3.65 / $2.53B — the Friday before the 2008-09-15 bankruptcy filing — and membership ends 2008-09-22 (the 10-day quote-freshness expiry after NYSE halted trading). It never re-enters: delisted names fall out of the investable set exactly when they cease being investable, while prices, fundamentals, and actions are retained for research.</p>
 </div>
@@ -4847,7 +5044,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 <p>September 2008 tail: members on every day <strong>through 2008-09-22</strong> (2,689 days in Sept); 2,683 of the 2,689 total member-days fall on or before the last tape Friday.</p>
 </div>
 </div>
-<div id="lehman_figs" class="cell" data-execution_count="39">
+<div id="lehman_figs" class="cell" data-execution_count="41">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -4863,8 +5060,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-lehman_actions" class="cell" data-execution_count="40">
-<div id="lehman_actions" class="cell-output cell-output-display" data-execution_count="40">
+<div id="cell-lehman_actions" class="cell" data-execution_count="42">
+<div id="lehman_actions" class="cell-output cell-output-display" data-execution_count="42">
 <div>
 
 
@@ -4920,7 +5117,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-lehman_fscore" class="cell" data-execution_count="41">
+<div id="cell-lehman_fscore" class="cell" data-execution_count="43">
 <div id="lehman_fscore" class="cell-output cell-output-display cell-output-markdown">
 <p>FY2007 (the last full year before the collapse) carries an <strong>F-Score of 0</strong> on the 9-point scale — the weakest possible signal — driven by negative CFO-vs-net-income accruals and deteriorating fundamentals across the board. FY2008 never appears in the as-reported (AR) view: the 10-K was never filed. The quarterly statement mirror runs through 2008-05-31 (51 quarters, 1995–2008).</p>
 </div>
@@ -4929,7 +5126,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 <section id="gics-classification-coverage" class="level1" data-number="9">
 <h1 data-number="9"><span class="header-section-number">9</span> GICS classification coverage</h1>
 <p><code>classifications</code> carries the stock-universe gate: the eleven GICS labels mapped from Sharadar’s taxonomy. <strong>Coverage is a known gap</strong> — only the iShares-era universe (2,589 names) is classified, not the full 21,960-stock master; <code>securities_master.sector/industry</code> (Sharadar taxonomy) covers every instrument but uses non-GICS labels (e.g. <em>Healthcare</em> vs <em>Health Care</em>). The NOTES.md action item — a live GICS-map coverage check against the whole master — remains open.</p>
-<div id="cell-fig_gics" class="cell" data-fig-height="5.6" data-fig-width="8.5" data-execution_count="42">
+<div id="cell-fig_gics" class="cell" data-fig-height="5.6" data-fig-width="8.5" data-execution_count="44">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -4938,7 +5135,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-gics_cover" class="cell" data-execution_count="43">
+<div id="cell-gics_cover" class="cell" data-execution_count="45">
 <div id="gics_cover" class="cell-output cell-output-display cell-output-markdown">
 <p>Classified names: <strong>2,589</strong> of <strong>21,960</strong> stocks in the master (<strong>11.8%</strong> coverage). No NULL sectors; the five <em>Cash and/or Derivatives</em> rows are iShares IWV placeholders that carry no GICS sector and are excluded from the stock allowlist by construction.</p>
 </div>
@@ -4946,8 +5143,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </section>
 <section id="freshness-data-quality" class="level1" data-number="10">
 <h1 data-number="10"><span class="header-section-number">10</span> Freshness &amp; data quality</h1>
-<div id="cell-quality" class="cell" data-execution_count="44">
-<div id="quality" class="cell-output cell-output-display" data-execution_count="44">
+<div id="cell-quality" class="cell" data-execution_count="46">
+<div id="quality" class="cell-output cell-output-display" data-execution_count="46">
 <div>
 
 
@@ -4996,8 +5193,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-adj_extremes" class="cell" data-execution_count="45">
-<div id="adj_extremes" class="cell-output cell-output-display" data-execution_count="45">
+<div id="cell-adj_extremes" class="cell" data-execution_count="47">
+<div id="adj_extremes" class="cell-output cell-output-display" data-execution_count="47">
 <div>
 
 
@@ -5084,8 +5281,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 <p><strong>Findings.</strong> (1) <strong>No-trade placeholder rows:</strong> 5.5% of price rows carry <code>volume = 0</code> with a positive close; ~301k of them carry the <strong>8.5×100b9078 overflow sentinel</strong> in <code>adjustment</code> (Sharadar did not populate <code>closeadj</code> for the row). (2) <strong>The adjustment tail is mostly mechanical:</strong> even among traded rows ~1.8% have <code>adjustment &gt; 100</code> (cumulative split+dividend rescale of long histories). As-traded <code>close</code> is unaffected, so <strong>returns/factor work should use <code>close</code> directly</strong>, applying <code>adjustment</code> only for total-return series, screening <code>volume = 0</code> and <code>adjustment</code> outliers. (3) Two rows with <code>close ≤ 0</code> exist (cleanup candidate).</p>
-<div id="cell-freshness" class="cell" data-execution_count="46">
-<div id="freshness" class="cell-output cell-output-display" data-execution_count="46">
+<div id="cell-freshness" class="cell" data-execution_count="48">
+<div id="freshness" class="cell-output cell-output-display" data-execution_count="48">
 <div>
 
 
@@ -5117,8 +5314,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </div>
 </div>
 </div>
-<div id="cell-snaps" class="cell" data-execution_count="47">
-<div id="snaps" class="cell-output cell-output-display" data-execution_count="47">
+<div id="cell-snaps" class="cell" data-execution_count="49">
+<div id="snaps" class="cell-output cell-output-display" data-execution_count="49">
 <div>
 
 
@@ -5257,8 +5454,8 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 </ol>
 <p><strong>Cadence.</strong> The Sharadar bulk zips refresh daily; a morning <code>bulk-update</code> + <code>optimize-db</code> keeps the warehouse current (worst case a few hundred MB–2 GB of downloads). <code>bulk-fromzero</code> is the full wipe-and-rebuild path (e.g., after a provider or schema change).</p>
 <p><strong>Post-update verification checklist.</strong></p>
-<div id="cell-hygiene_verify" class="cell" data-execution_count="48">
-<div id="hygiene_verify" class="cell-output cell-output-display" data-execution_count="48">
+<div id="cell-hygiene_verify" class="cell" data-execution_count="50">
+<div id="hygiene_verify" class="cell-output cell-output-display" data-execution_count="50">
 <div>
 
 
@@ -5312,7 +5509,7 @@ adj(t)  = product of factors of events E with  E &gt; t          (stored)</code>
 <section id="appendix-sf1-indicator-dictionary" class="level1 unnumbered">
 <h1 class="unnumbered">Appendix: SF1 indicator dictionary</h1>
 <p>The complete 112-indicator dictionary, every row shown, grouped by statement family (vendor indicator names). “typed?” = exposed as a column in the <code>sf1</code> table; otherwise it lives inside the compressed <code>data</code> blob.</p>
-<div id="appendix_dict" class="cell" data-execution_count="49">
+<div id="appendix_dict" class="cell" data-execution_count="51">
 <div id="appendix_dict-1" class="cell-output cell-output-display cell-output-markdown">
 <p><strong>Income statement</strong> — 23 indicators</p>
 </div>

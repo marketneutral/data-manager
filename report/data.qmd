@@ -203,6 +203,51 @@ stock splits — see NVDA 2024-06-10 in §7) **and the adjustment factor only
 matters for total-return series** (§10 quantifies the no-trade and
 adjustment-tail rows).
 
+## Column-level data dictionary
+
+Sharadar ships the field definitions themselves as a downloadable dataset —
+the **`descriptions` table** (one row per table + field: `table`,
+`indicator`, `isfilter`, `isprimarykey`, `title`, `description`,
+`unittype`; 373 rows covering all 17 vendor datasets). This warehouse now
+stores it as the live `descriptions` table, loaded from the bulk pipeline
+like any other raw table and refreshed with every `bulk_update` — so the
+dictionary in the database is the vendor's own, versioned with each pull.
+
+```{python}
+#| label: dict_counts
+dcounts = q("""SELECT table_name AS vendor_table, COUNT(*) AS fields
+               FROM descriptions GROUP BY table_name ORDER BY fields DESC""")
+dcounts
+```
+
+Every dictionary row carries a full sentence-level definition — e.g.:
+
+```{python}
+#| label: dict_sample
+q("""SELECT table_name, indicator, title, substr(description,1,150) AS description
+     FROM descriptions WHERE table_name='SF1' AND indicator='revenue'""")
+```
+
+| our table | vendor dictionary source | our table | vendor dictionary source |
+|---|---|---|---|
+| `securities_master` | TICKERS | `fundamentals` (derived) | this repo |
+| `corporate_actions` | ACTIONS | `quarterly_statements` (derived) | this repo |
+| `sp500_membership` | SP500 | `ratios` (derived) | this repo |
+| `metrics` | METRICS (19 of 22 stored) | `universe_pit` (derived) | this repo |
+| `sf1` | SF1 (29 typed + 76 in `data` blob) | `classifications`, `universe` | this repo |
+| `prices` | SEP/SFP bulk price columns | `snapshots` (ledger) | this repo |
+
+The full column-level dictionary for all 14 tables — vendor definitions
+*and* the derived-table semantics written from this repo's code — is in
+**`docs/data_dictionary.md`** (+ machine-readable `docs/data_dictionary.json`),
+generated from the in-DB `descriptions` table. The SF1 appendix in this
+report shows the same 112-field dictionary grouped by family. Vendor
+datasets we do **not** store: `SF2` (insider holdings), `SF3/SF3A/SF3B`
+(institutional investors), `EVENTS`/`EVENTCODES` (material events),
+`DAILY` (daily mcap/EV/PE metrics — not the OHLC table), and the
+meta-tables `INDICATORS`, `ACTIONTYPES`, `TABLE-DESCRIPTIONS` (all still
+present inside `descriptions` if ever needed).
+
 # Securities master & corporate actions
 
 The two "who and what happened" tables. Both are raw Sharadar bulk files

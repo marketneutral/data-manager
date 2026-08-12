@@ -1,0 +1,2152 @@
+{
+ "securities_master": {
+  "origin": "RAW (tickers zip)",
+  "key": "permaticker (PK); ticker unique",
+  "columns": [
+   {
+    "name": "permaticker",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "text",
+    "definition": "Permanent Ticker Symbol \u2014 The permaticker is a unique and unchanging identifier issued by Sharadar for a security in the dataset. Distinct share classes of the same issuer receive distinct permatickers (for example primary and secondary common classes). This field is not included in other tables in order to maximise data scalability in those tables; join from those tables via ticker to TICKERS (filter on the table field as needed; e.g. SEP or SF1).",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ticker",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Ticker Symbol \u2014 The ticker is a unique identifier for a security in the database. Where a company is delisted and the ticker subsequently recycled for use by a different company; we utilise that ticker for the currently active company and append a number to the ticker of the delisted company. The ACTIONS table provides a record of historical ticker changes.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "name",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Issuer Name \u2014 The name of the security issuer.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "exchange",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Stock Exchange \u2014 The exchange on which the security's primary listing is held. Examples are:",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "isdelisted",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "Y/N",
+    "definition": "Is Delisted? \u2014 Is the security delisted? [Y]es or [N]o.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "category",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Issuer Category \u2014 The category of the issuer: Domestic; Canadian or ADR. This field is based on the filing category with the SEC. Domestic firms file form 10; ADRs file form 20 and Canadian firms file form 40.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "cusips",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "CUSIPs \u2014 A security identifier. Space delimited in the event of multiple identifiers.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "siccode",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Standard Industrial Classification (SIC) Code \u2014 The Standard Industrial Classification (SIC) is a system for classifying industries by a four-digit code; as sourced from SEC filings. More on the SIC system here: https://en.wikipedia.org/wiki/Standard_Industrial_Classification",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sicsector",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "SIC Sector \u2014 The SIC sector is based on the SIC code and the division tabled here: https://en.wikipedia.org/wiki/Standard_Industrial_Classification",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sicindustry",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "SIC Industry \u2014 The SIC industry is based on the SIC code and the industry tabled here: https://www.sec.gov/info/edgar/siccodes.htm",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "figi",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Composite FIGI \u2014 The FIGI is a security identifier provided by openfigi.com. There are different types of FIGI; and this indicator represents the Composite FIGI type for US exchanges in the event that this is available in the openfigi.com API; or alternatively the non-composite FIGI type for US exchanges if only this is available. In the event of multiple FIGIs these are space delimited. This indicator is not available for all delisted stocks due to limitations in the openfigi.com API.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "famaindustry",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Fama Industry \u2014 Industry classifications based on the SIC code and classifications by Fama and French here: http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/Data_Library/det_48_ind_port.html",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sector",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Sector \u2014 A sector classification based on SIC codes in a format which approximates to GICS.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "industry",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Industry \u2014 An industry classification based on SIC codes in a format which approximates to GICS.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "scalemarketcap",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Company Scale - Market Cap \u2014 This field is experimental and subject to change. It categorises the company according to it's maximum observed market cap as follows: 1 - Nano <$50m; 2 - Micro < $300m; 3 - Small < $2bn; 4 - Mid <$10bn; 5 - Large < $200bn; 6 - Mega >= $200bn",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "scalerevenue",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Company Scale - Revenue \u2014 This field is experimental and subject to change. It categorises the company according to it's maximum observed annual revenue as follows: 1 - Nano <$50m; 2 - Micro < $300m; 3 - Small < $2bn; 4 - Mid <$10bn; 5 - Large < $200bn; 6 - Mega >= $200bn",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "relatedtickers",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Related Tickers \u2014 Where related tickers have been identified this field is populated. Related tickers can include the prior ticker before a ticker change; and it includes tickers for alternative share classes.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "currency",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Currency \u2014 The company functional reporting currency for the SF1 Fundamentals table or the currency for EOD prices in SEP and SFP.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "location",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Location \u2014 The company location as registered with the Securities and Exchange Commission.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "firstadded",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "First Added Date \u2014 The date that the ticker was first added to coverage in the dataset.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "firstpricedate",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "First Price Date \u2014 The date of the first price observation for a given ticker. Can be used as a proxy for IPO date. Minimum value of 1986-01-01 for IPO's that occurred prior to this date. Note: this does not necessarily represent the first price date available in our datasets since our end of day price history currently starts in December 1997.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "lastpricedate",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Last Price Date \u2014 The most recent price observation available.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "firstquarter",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "First Quarter \u2014 The first financial quarter available in the dataset.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "lastquarter",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Last Quarter \u2014 The last financial quarter available in the dataset.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "secfilings",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "SEC Filings URL \u2014 The URL pointing to the SEC filings which also contains the Central Index Key (CIK).",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "companysite",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Company Website URL \u2014 The URL pointing to the company website.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "lastupdated",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Last Updated Date \u2014 Last Updated represents the last date that this database entry was updated; which is useful to users when updating their local records.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "table",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Table \u2014 The database table which the ticker is featured in. Examples are: SF1 or SEP.",
+    "source": "Sharadar `descriptions` table"
+   }
+  ]
+ },
+ "corporate_actions": {
+  "origin": "RAW (actions zip)",
+  "key": "(ticker, date, action)",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "text",
+    "definition": "Ticker Symbol \u2014 The ticker is a unique identifier for a security in the database. Where a company is delisted and the ticker subsequently recycled for use by a different company; we utilise that ticker for the currently active company and append a number to the ticker of the delisted company. The ACTIONS table provides a record of historical ticker changes.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "date",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Date \u2014 The date of the corporate action.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "action",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "text",
+    "definition": "Action \u2014 The available actions in this field are outlined in the INDICATORS table where the table field equals ACTIONTYPES.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "name",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Issuer Name \u2014 The name of the issuer.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "value",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "numeric",
+    "definition": "Value \u2014 The available values in this field are outlined in the INDICATORS table where the table field equals ACTIONTYPES.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "contraticker",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Contra Ticker Symbol \u2014 The contra ticker associated with the action; if applicable.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "contraname",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Contra Issuer Name \u2014 The name of the contra issuer associated with the contra ticker.",
+    "source": "Sharadar `descriptions` table"
+   }
+  ]
+ },
+ "sp500_membership": {
+  "origin": "RAW (Sharadar API)",
+  "key": "(ticker, date)",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "text",
+    "definition": "Ticker Symbol \u2014 The ticker is a unique identifier for a security in the database. Where a company is delisted and the ticker subsequently recycled for use by a different company; we utilise that ticker for the currently active company and append a number to the ticker of the delisted company. In the SP500 table; ticker and name always use the current Sharadar identifiers (history is rewired after ticker changes). Historical market symbols are recorded in the ACTIONS table (tickerchangefrom / tickerchangeto). Join to TICKERS on ticker (typically where table=SEP) to obtain permaticker and other metadata.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "date",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Date \u2014 The action date (YYYY-MM-DD). For action=added and action=removed this is the effective index-membership date (not the announcement date). For action=historical this is the quarter-end snapshot date. For action=current this is our data refresh date. We do not distinguish between market open and close at present.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "action",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Action \u2014 The type of S&P500 membership record. current: full set of present constituents; date is our data refresh date; contraticker is N/A. added: security entered the index; date is the effective membership date (not the announcement date); contraticker is the security removed in a paired swap when applicable. removed: security left the index; date is the effective membership date (not the announcement date); contraticker is the security added in a paired swap when applicable. historical: complete constituent snapshot on a calendar quarter-end (31 March; 30 June; 30 September; 31 December) from 1998-03-31 forward; one row per member on that date; contraticker is N/A.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "name",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Issuer Name \u2014 The name of the issuer associated with ticker. As with ticker; names in the SP500 table reflect current labeling rather than the name as of the historical date.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "contraticker",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Contra Ticker Symbol \u2014 The contra ticker is the opposing ticker entry when a membership swap is recorded. Where action=added it is the ticker removed in the same change; where action=removed it is the ticker added. N/A when there is no paired replacement (for example certain alternative share-class changes; see note).",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "contraname",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Contra Issuer Name \u2014 The name of the contra issuer corresponding to contraticker; or N/A when not applicable.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "note",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Notes \u2014 Notes and additional information regarding additions to and removals from the S&P500. Examples include alternative share class added and alternative share class removed without replacement.",
+    "source": "Sharadar `descriptions` table"
+   }
+  ]
+ },
+ "metrics": {
+  "origin": "RAW (metrics zip)",
+  "key": "(ticker, as_of)",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "text",
+    "definition": "Ticker Symbol \u2014 The ticker is a unique identifier for a security in the database. Where a company is delisted and the ticker subsequently recycled for use by a different company; we utilise that ticker for the currently active company and append a number to the ticker of the delisted company. The ACTIONS table provides a record of historical ticker changes.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "as_of",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Price Date \u2014 The trade date of the most recent price and volume available.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "price",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Price \u2014 The closing stock price on the date.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "beta1y",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Beta - 1 Year Daily \u2014 The beta of the stock over 1 year relative to the market calculated using daily adjusted closing price of the stock (as adjusted for stock splits; dividends and spinoffs) relative to total returns of the market as represented by the adjusted closing prices of the SPY S&P500 ETF. Recalculated and updated on a weekly basis.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "beta5y",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Beta - 5 Year Monthly \u2014 The beta of the stock over 5 years relative to the market calculated using monthly adjusted closing price of the stock (as adjusted for stock splits; dividends and spinoffs) relative to total returns of the market as represented by the adjusted closing prices of the SPY S&P500 ETF. Recalculated and updated on a weekly basis.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ma50d",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Price Moving Average - 50 Day \u2014 The 50 day moving average closing price as adjusted for stock splits and stock dividends; but not cash dividends or spinoffs. Not available if the stock has been trading less than 50 days.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ma200d",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Price Moving Average - 200 Day \u2014 The 200 day moving average closing price as adjusted for stock splits and stock dividends; but not cash dividends or spinoffs. Not available if the stock has been trading less than 200 days.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "high52w",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "High Price - 52 Week \u2014 The highest price over the last 52 weeks as adjusted for stock splits and stock dividends; but not cash dividends or spinoffs.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "low52w",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Low Price - 52 Week \u2014 The lowest price over the last 52 weeks as adjusted for stock splits and stock dividends; but not cash dividends or spinoffs.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "return1y",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "percent",
+    "definition": "Total Return - 1 Year \u2014 The total return over 1 year calculated using the closing price as adjusted for stock splits and stock dividends; but not cash dividends or spinoffs. Not available if the stock has been trading for less than 1 year.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "return5y",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "percent",
+    "definition": "Total Return - 5 Year \u2014 The total return over 5 years calculated using the closing price as adjusted for stock splits and stock dividends; but not cash dividends or spinoffs. Not available if the stock has been trading for less than 5 years.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "returnytd",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "percent",
+    "definition": "Total Return - Year to Date \u2014 The total return for the year to date calculated using the closing price as adjusted for stock splits and stock dividends; but not cash dividends or spinoffs.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "volume",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "numeric",
+    "definition": "Volume \u2014 The daily traded volume across all exchanges; adjusted for stock splits and stock dividends. Not adjusted for cash dividends or spinoffs. Includes opening and closing cross volumes if applicable.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "volumeavg1m",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "numeric",
+    "definition": "Volume Average - 1 Month \u2014 The daily average traded volume over 1 month across all exchanges; adjusted for stock splits and stock dividends. Not adjusted for cash dividends or spinoffs. Includes opening and closing cross volumes if applicable.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "volumeavg3m",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "numeric",
+    "definition": "Volume Average - 3 Month \u2014 The daily average traded volume over 3 months across all exchanges; adjusted for stock splits and stock dividends. Not adjusted for cash dividends or spinoffs. Includes opening and closing cross volumes if applicable.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "dividendyieldtrailing",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "percent",
+    "definition": "Dividend Yield - Trailing \u2014 The trailing dividend yield; calculated by summing regular and special cash dividend payments in the last year; dividing by the stock price and multiplying by 100.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "dividendyieldforward",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "percent",
+    "definition": "Dividend Yield - Forward \u2014 The forward dividend yield; calculated by annualising the last regular cash dividend payment; dividing by the stock price and multiplying by 100.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "high5y",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "High Price - 5 Year \u2014 The highest price over the last 5 years as adjusted for stock splits and stock dividends; but not cash dividends or spinoffs.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "low5y",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Low Price - 5 Year \u2014 The lowest price over the last 5 years weeks as adjusted for stock splits and stock dividends; but not cash dividends or spinoffs.",
+    "source": "Sharadar `descriptions` table"
+   }
+  ],
+  "notes": "stores 19 of the vendor's 22 METRICS fields (as_of = vendor `date` renamed; dropped lastupdated, ma200w, ma50w)"
+ },
+ "sf1": {
+  "origin": "RAW (fundamentals zip)",
+  "key": "(ticker, dimension, reportperiod)",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "text",
+    "definition": "Ticker Symbol \u2014 [Entity] The ticker is a unique identifier for a security in the database. Where a company is delisted and the ticker subsequently recycled for use by a different company; we utilise that ticker for the currently active company and append a number to the ticker of the delisted company. The ACTIONS table provides a record of historical ticker changes.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "dimension",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "text",
+    "definition": "Dimension \u2014 [Entity] The dimension field allows you to take different dimensional views of data over time. ARQ: Quarterly; excluding restatements; MRQ: Quarterly; including restatements; ARY: annual; excluding restatements; MRY: annual; including restatements; ART: trailing-twelve-months; excluding restatements; MRT: trailing-twelve-months; including restatements.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "date",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "",
+    "definition": "this repo \u2014 as-of/observation date key for point-in-time lookups (filing date for AR*, report-key date for MR*)",
+    "source": "this repo (local semantics)"
+   },
+   {
+    "name": "reportperiod",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Report Period \u2014 [Entity] The Report Period represents the end date of the fiscal period.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "fiscalperiod",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Fiscal Period \u2014 The fiscal period of the report expressed as follows: 2024-Q2; 2024-Q3; 2024-FY etc. Note that companies can have different fiscal periods for the report period due to different year end dates.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "calendardate",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Calendar Date \u2014 [Entity] The Calendar Date represents the normalized [ReportPeriod]. This provides a common date to query for which is necessary due to irregularity in report periods across companies. For example; if the report period is 2015-09-26; the calendar date will be 2015-09-30 for quarterly and trailing-twelve-month dimensions (ARQ;MRQ;ART;MRT); and 2015-12-31 for annual dimensions (ARY;MRY). We also employ offsets in order to maximise comparability of the period across companies. For example consider two companies: one with a quarter ending on 2018-07-24; and the other with a quarter ending on 2018-06-28. A naive normalization process would assign these to differing calendar quarters of 2018-09-30 and 2018-06-30 respectively. However; we assign these both to the 2018-06-30 calendar quarter because this maximises the overlap in the report periods in question and therefore the comparability of this period.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "lastupdated",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Last Updated Date \u2014 [Entity] Last Updated represents the last date that this database entry was updated; which is useful to users when updating their local records.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "revenue",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Revenues \u2014 [Income Statement] The amount of Revenue recognised from goods sold; services rendered; insurance premiums; or other activities that constitute an earning process. Interest income for financial institutions is reported net of interest expense and provision for credit losses. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netinc",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Income \u2014 [Income Statement] The portion of profit or loss for the period; net of income taxes; which is attributable to the parent after the deduction of [NetIncNCI] from [ConsolInc]; and before the deduction of [PrefDivIS].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netinccmn",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Income Common Stock \u2014 [Income Statement] The amount of net income (loss) for the period due to common shareholders. Typically differs from [NetInc] to the parent entity due to the deduction of [PrefDivIS].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "assets",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Total Assets \u2014 [Balance Sheet] Sum of the carrying amounts as of the balance sheet date of all assets that are recognized. Major components are [CashnEq]; [Investments];[Intangibles]; [PPNENet];[TaxAssets] and [Receivables].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "liabilities",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Total Liabilities \u2014 [Balance Sheet] Sum of the carrying amounts as of the balance sheet date of all liabilities that are recognized. Principal components are [Debt]; [DeferredRev]; [Payables];[Deposits]; and [TaxLiabilities].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "equity",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Shareholders Equity Attributable to Parent \u2014 [Balance Sheet] A principal component of the balance sheet; in addition to [Liabilities] and [Assets]; that represents the total of all stockholders' equity (deficit) items; net of receivables from officers; directors; owners; and affiliates of the entity which are attributable to the parent.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "cashneq",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Cash and Equivalents \u2014 [Balance Sheet] A component of [Assets] representing the amount of currency on hand as well as demand deposits with banks or financial institutions. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfo",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow from Operations \u2014 [Cash Flow Statement] A component of [NCF] representing the amount of cash inflow (outflow) from operating activities; from continuing and discontinued operations.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "capex",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Capital Expenditure \u2014 [Cash Flow Statement] A component of [NCFI] representing the net cash inflow (outflow) associated with the acquisition & disposal of long-lived; physical & intangible assets that are used in the normal conduct of business to produce goods and services and are not intended for resale. Includes cash inflows/outflows to pay for construction of self-constructed assets & software. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "fcf",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Free Cash Flow \u2014 [Metrics] Free Cash Flow is a measure of financial performance calculated as [NCFO] minus [CapEx].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "marketcap",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Market Capitalization \u2014 [Metrics] Represents the product of [SharesBas]; [Price] and [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ev",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Enterprise Value \u2014 [Metrics] Enterprise value is a measure of the value of a business as a whole; calculated as [MarketCap] plus [DebtUSD] minus [CashnEqUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "pe",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Price Earnings (Damodaran Method) \u2014 [Metrics] Measures the ratio between [MarketCap] and [NetIncCmnUSD]",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "pb",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Price to Book Value \u2014 [Metrics] Measures the ratio between [MarketCap] and [EquityUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ps",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Price Sales (Damodaran Method) \u2014 [Metrics] Measures the ratio between [MarketCap] and [RevenueUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "price",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Share Price (Adjusted Close) \u2014 [Entity] The price per common share adjusted for stock splits but not adjusted for dividends; used in the computation of [PE1]; [PS1]; [DivYield] and [SPS].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "eps",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency/share",
+    "definition": "Earnings per Basic Share \u2014 [Income Statement] Earnings per share as calculated and reported by the company. Approximates to the amount of [NetIncCmn] for the period per each [SharesWA] after adjusting for [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "dps",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Dividends per Basic Common Share \u2014 [Income Statement] Aggregate dividends declared during the period for each split-adjusted share of common stock outstanding. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "divyield",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Dividend Yield \u2014 [Metrics] Dividend Yield measures the ratio between a company's trailing twelve month [DPS] and its close [Price]; by summing dividends by ExDate; provided in the SHARADAR/ACTIONS table; in the twelve months leading up to the date in the [DateKey] indicator.  Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "roe",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Return on Average Equity \u2014 [Metrics] Return on equity measures a corporation's profitability by calculating the amount of [NetIncCmn] returned as a percentage of [EquityAvg].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "roa",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Return on Average Assets \u2014 [Metrics] Return on assets measures how profitable a company is [NetIncCmn] relative to its total assets [AssetsAvg].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "roic",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Return on Invested Capital \u2014 [Metrics] Return on Invested Capital is a ratio estimated by dividing [EBIT] by [InvCapAvg]. [InvCap] is calculated as: [Debt] plus [Assets] minus [Intangibles] minus [CashnEq] minus [LiabilitiesC]. Please note this calculation method is subject to change.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "grossmargin",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Gross Margin \u2014 [Metrics] Gross Margin measures the ratio between a company's [GP] and [Revenue].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netmargin",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Profit Margin \u2014 [Metrics] Measures the ratio between a company's [NetIncCmn] and [Revenue].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebitda",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Earnings Before Interest Taxes & Depreciation Amortization (EBITDA) \u2014 [Metrics] EBITDA is a non-GAAP accounting metric that is widely used when assessing the performance of companies; calculated by adding [DepAmor] back to [EBIT].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "shareswa",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "units",
+    "definition": "Weighted Average Shares \u2014 [Income Statement] The weighted average number of shares or units issued and outstanding that are used by the company to calculate [EPS]; determined based on the timing of issuance of shares or units in the period.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "shareswadil",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "units",
+    "definition": "Weighted Average Shares Diluted \u2014 [Income Statement] The weighted average number of shares or units issued and outstanding that are used by the company to calculate [EPSDil]; determined based on the timing of issuance of shares or units in the period.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "currentratio",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Current Ratio \u2014 [Metrics] The ratio between [AssetsC] and [LiabilitiesC]; for companies that operate a classified balance sheet.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "de",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Debt to Equity Ratio \u2014 [Metrics] Measures the ratio between [Liabilities] and [Equity].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "data",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "",
+    "definition": "this repo \u2014 zlib-compressed JSON of the FULL vendor row (all 105 indicator fields beyond the 7 key/date fields)",
+    "source": "this repo (local semantics)"
+   }
+  ]
+ },
+ "prices": {
+  "origin": "RAW (stocks+funds zips)",
+  "key": "(ticker, date)",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "text",
+    "definition": "Ticker Symbol \u2014 The ticker is a unique identifier for a security in the database. Where a company is delisted and the ticker subsequently recycled for use by a different company; we utilise that ticker for the currently active company and append a number to the ticker of the delisted company. The ACTIONS table provides a record of historical ticker changes.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "date",
+    "type": "TEXT/REAL",
+    "pk": 1,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Price Date \u2014 The trade date of the price observations.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "open",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Open Price - Split Adjusted \u2014 The official exchange opening price; adjusted for stock splits and stock dividends. Not adjusted for cash dividends or spinoffs.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "high",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "High Price - Split Adjusted \u2014 The high share price; adjusted for stock splits and stock dividends. Not adjusted for cash dividends or spinoffs.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "low",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Low Price - Split Adjusted \u2014 The low share price; adjusted for stock splits and stock dividends. Not adjusted for cash dividends or spinoffs.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "close",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Close Price - Split Adjusted \u2014 The official exchange close price; adjusted for stock splits and stock dividends. Not adjusted for cash dividends or spinoffs.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "volume",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "numeric",
+    "definition": "Volume - Split Adjusted \u2014 The daily traded volume across all exchanges; adjusted for stock splits and stock dividends. Not adjusted for cash dividends or spinoffs. Includes opening and closing cross volumes if applicable.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "adjustment",
+    "type": "TEXT/REAL",
+    "pk": 0,
+    "unit": "",
+    "definition": "this repo \u2014 total-return factor = closeadj/closeunadj (split+dividend chain, normalized to 1.0 at latest quote)",
+    "source": "this repo (local semantics)"
+   }
+  ],
+  "notes": "from the SEP/SFP bulk price columns; closeadj/closeunadj collapsed into `adjustment`; stored close = closeunadj (as-traded), OHLC as-traded (vendor OHLC are split-adjusted)"
+ },
+ "sf1_blob": {
+  "origin": "RAW (fundamentals zip) \u2014 inside sf1.data",
+  "key": "same as sf1",
+  "columns": [
+   {
+    "name": "accoci",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Accumulated Other Comprehensive Income \u2014 [Balance Sheet] A component of [Equity] representing the accumulated change in equity from transactions and other events and circumstances from non-owner sources; net of tax effect; at period end. Includes foreign currency translation items; certain pension adjustments; unrealized gains and losses on certain investments in debt and equity securities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "assetsavg",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Average Assets \u2014 [Metrics] Average asset value for the period used in calculation of [ROE] and [ROA]; derived from [Assets].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "assetsc",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Current Assets \u2014 [Balance Sheet] The current portion of [Assets]; reported if a company operates a classified balance sheet that segments current and non-current assets.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "assetsnc",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Assets Non-Current \u2014 [Balance Sheet] Amount of non-current assets; for companies that operate a classified balance sheet. Calculated as the different between Total Assets [Assets] and Current Assets [AssetsC].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "assetturnover",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Asset Turnover \u2014 [Metrics] Asset turnover is a measure of a firms operating efficiency; calculated by dividing [Revenue] by [AssetsAVG]. Often a component of DuPont ROE analysis.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "bvps",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency/share",
+    "definition": "Book Value per Share \u2014 [Metrics] Measures the ratio between [Equity] and [SharesWA] as adjusted by [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "cashnequsd",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Cash and Equivalents (USD) \u2014 [Balance Sheet] [CashnEq] in USD; converted by [FXUSD]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "consolinc",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Consolidated Income \u2014 [Income Statement] The portion of profit or loss for the period; net of income taxes; which is attributable to the consolidated entity; before the deduction of [NetIncNCI].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "cor",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Cost of Revenue \u2014 [Income Statement] The aggregate cost of goods produced and sold and services rendered during the reporting period. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "datekey",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Date Key \u2014 [Entity] The Date Key represents the SEC filing date for AR dimensions (ARQ;ART;ARY); and the [REPORTPERIOD] for MR dimensions (MRQ;MRT;MRY). In addition; this is the observation date used for [Price] based data such as [MarketCap]; [Price] and [PE].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "debt",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Total Debt \u2014 [Balance Sheet] A component of [Liabilities] representing the total amount of current and non-current debt owed. Includes secured and unsecured bonds issued; commercial paper; notes payable; credit facilities; lines of credit; capital lease obligations; operating lease obligations; and convertible notes. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "debtc",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Debt Current \u2014 [Balance Sheet] The current portion of [Debt]; reported if the company operates a classified balance sheet that segments current and non-current liabilities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "debtnc",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Debt Non-Current \u2014 [Balance Sheet] The non-current portion of [Debt] reported if the company operates a classified balance sheet that segments current and non-current liabilities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "debtusd",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Total Debt (USD) \u2014 [Balance Sheet] [Debt] in USD; converted by [FXUSD]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "deferredrev",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Deferred Revenue \u2014 [Balance Sheet] A component of [Liabilities] representing the carrying amount of consideration received or receivable on potential earnings that were not recognized as revenue; including sales; license fees; and royalties; but excluding interest income. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "depamor",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Depreciation Amortization & Accretion \u2014 [Cash Flow Statement] A component of operating cash flow representing the aggregate net amount of depreciation; amortization; and accretion recognized during an accounting period. As a non-cash item; the net amount is added back to net income when calculating cash provided by or used in operations using the indirect method. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "deposits",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Deposit Liabilities \u2014 [Balance Sheet] A component of [Liabilities] representing the total of all deposit liabilities held; including foreign and domestic; interest and noninterest bearing. May include demand deposits; saving deposits; Negotiable Order of Withdrawal and time deposits among others. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebit",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Earning Before Interest & Taxes (EBIT) \u2014 [Income Statement] Earnings Before Interest and Tax is calculated by adding [TaxExp] and [IntExp] back to [NetInc].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebitdamargin",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "EBITDA Margin \u2014 [Metrics] Measures the ratio between a company's [EBITDA] and [Revenue].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebitdausd",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Earnings Before Interest Taxes & Depreciation Amortization (USD) \u2014 [Metrics] [EBITDA] in USD; converted by [FXUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebitusd",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Earning Before Interest & Taxes (USD) \u2014 [Income Statement] [EBIT] in USD; converted by [FXUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebt",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Earnings before Tax \u2014 [Metrics] Earnings Before Tax is calculated by adding [TaxExp] back to [NetInc].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "epsdil",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency/share",
+    "definition": "Earnings per Diluted Share \u2014 [Income Statement] Earnings per diluted share as calculated and reported by the company. Approximates to the amount of [NetIncCmn] for the period per each [SharesWADil] after adjusting for [ShareFactor]..",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "epsusd",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Earnings per Basic Share (USD) \u2014 [Income Statement] [EPS] in USD; converted by [FXUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "equityavg",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Average Equity \u2014 [Metrics] Average equity value for the period used in calculation of [ROE]; derived from [Equity].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "equityusd",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Shareholders Equity (USD) \u2014 [Balance Sheet] [Equity] in USD; converted by [FXUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "evebit",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Enterprise Value over EBIT \u2014 [Metrics] Measures the ratio between [EV] and [EBITUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "evebitda",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Enterprise Value over EBITDA \u2014 [Metrics] Measures the ratio between [EV] and [EBITDAUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "fcfps",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency/share",
+    "definition": "Free Cash Flow per Share \u2014 [Metrics] Free Cash Flow per Share is a valuation metric calculated by dividing [FCF] by [SharesWA] and [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "fxusd",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Foreign Currency to USD Exchange Rate \u2014 [Metrics] The exchange rate used for the conversion of foreign currency to USD for non-US companies that do not report in USD.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "gp",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Gross Profit \u2014 [Income Statement] Aggregate revenue [Revenue] less cost of revenue [CoR] directly attributable to the revenue generation activity.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "intangibles",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Goodwill and Intangible Assets \u2014 [Balance Sheet] A component of [Assets] representing the carrying amounts of all intangible assets and goodwill as of the balance sheet date; net of accumulated amortization and impairment charges. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "intexp",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Interest Expense \u2014 [Income Statement] Amount of the cost of borrowed funds accounted for as interest expense. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "invcap",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Invested Capital \u2014 [Metrics] Invested capital is an input into the calculation of [ROIC]; and is calculated as: [Debt] plus [Assets] minus [Intangibles] minus [CashnEq] minus [LiabilitiesC]. Please note this calculation method is subject to change.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "invcapavg",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Invested Capital Average \u2014 [Metrics] Average invested capital value for the period used in the calculation of [ROIC]; and derived from [InvCap]. Invested capital is an input into the calculation of [ROIC]; and is calculated as: [Debt] plus [Assets] minus [Intangibles] minus [CashnEq] minus [LiabilitiesC]. Please note this calculation method is subject to change.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "inventory",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Inventory \u2014 [Balance Sheet] A component of [Assets] representing the amount after valuation and reserves of inventory expected to be sold; or consumed within one year or operating cycle; if longer. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "investments",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Investments \u2014 [Balance Sheet] A component of [Assets] representing the total amount of marketable and non-marketable securties; loans receivable; equity-method investments; and other invested assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "investmentsc",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Investments Current \u2014 [Balance Sheet] The current portion of [Investments]; reported if the company operates a classified balance sheet that segments current and non-current assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "investmentsnc",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Investments Non-Current \u2014 [Balance Sheet] The non-current portion of [Investments]; reported if the company operates a classified balance sheet that segments current and non-current assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "liabilitiesc",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Current Liabilities \u2014 [Balance Sheet] The current portion of [Liabilities]; reported if the company operates a classified balance sheet that segments current and non-current liabilities.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "liabilitiesnc",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Liabilities Non-Current \u2014 [Balance Sheet] The non-current portion of [Liabilities]; reported if the company operates a classified balance sheet that segments current and non-current liabilities.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncf",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow / Change in Cash & Cash Equivalents \u2014 [Cash Flow Statement] Principal component of the cash flow statement representing the amount of increase (decrease) in cash and cash equivalents. Includes [NCFO]; investing [NCFI] and financing [NCFF] for continuing and discontinued operations; and the effect of exchange rate changes on cash [NCFX].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfbus",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow - Business Acquisitions and Disposals \u2014 [Cash Flow Statement] A component of [NCFI] representing the net cash inflow (outflow) associated with the acquisition & disposal of businesses; joint-ventures; affiliates; and other named investments. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfcommon",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Issuance (Purchase) of Equity Shares \u2014 [Cash Flow Statement] A component of [NCFF] representing the net cash inflow (outflow) from common equity changes. Includes additional capital contributions from share issuances and exercise of stock options; and outflow from share repurchases.  Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfdebt",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Issuance (Repayment) of Debt Securities  \u2014 [Cash Flow Statement] A component of [NCFF] representing the net cash inflow (outflow) from issuance (repayment) of debt securities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfdiv",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Payment of Dividends & Other Cash Distributions    \u2014 [Cash Flow Statement] A component of [NCFF] representing dividends and dividend equivalents paid on common stock and restricted stock units. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncff",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow from Financing \u2014 [Cash Flow Statement] A component of [NCF] representing the amount of cash inflow (outflow) from financing activities; from continuing and discontinued operations. Principal components of financing cash flow are: issuance (purchase) of equity shares; issuance (repayment) of debt securities; and payment of dividends & other cash distributions. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfi",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow from Investing \u2014 [Cash Flow Statement] A component of [NCF] representing the amount of cash inflow (outflow) from investing activities; from continuing and discontinued operations. Principal components of investing cash flow are: capital (expenditure) disposal of equipment [CapEx]; business (acquisitions) disposition [NCFBus] and investment (acquisition) disposal [NCFInv]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfinv",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow - Investment Acquisitions and Disposals \u2014 [Cash Flow Statement] A component of [NCFI] representing the net cash inflow (outflow) associated with the acquisition & disposal of investments; including marketable securities and loan originations. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfx",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Effect of Exchange Rate Changes on Cash  \u2014 [Cash Flow Statement] A component of Net Cash Flow [NCF] representing the amount of increase (decrease) from the effect of exchange rate changes on cash and cash equivalent balances held in foreign currencies. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netinccmnusd",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Net Income Common Stock (USD) \u2014 [Income Statement] [NetIncCmn] in USD; converted by [FXUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netincdis",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Loss Income from Discontinued Operations \u2014 [Income Statement] Amount of loss (income) from a disposal group; net of income tax; reported as a separate component of income. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netincnci",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Income to Non-Controlling Interests \u2014 [Income Statement] The portion of income which is attributable to non-controlling interest shareholders; subtracted from [ConsolInc] in order to obtain [NetInc]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "opex",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Operating Expenses \u2014 [Income Statement] Operating expenses represent the total expenditure on [SGnA]; [RnD] and other operating expense items; it excludes [CoR].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "opinc",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Operating Income \u2014 [Income Statement] Operating income is a measure of financial performance before the deduction of [IntExp]; [TaxExp] and other Non-Operating items. It is calculated as [GP] minus [OpEx].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "payables",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Trade and Non-Trade Payables \u2014 [Balance Sheet] A component of [Liabilities] representing trade and non-trade payables. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "payoutratio",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Payout Ratio \u2014 [Metrics] The percentage of earnings paid as dividends to common stockholders. Calculated by dividing [DPS] by [EPSUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "pe1",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Price to Earnings Ratio \u2014 [Metrics] An alternative to [PE] representing the ratio between [Price] and [EPSUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ppnenet",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Property Plant & Equipment Net \u2014 [Balance Sheet] A component of [Assets] representing the amount after accumulated depreciation; depletion and amortization of physical assets used in the normal conduct of business to produce goods and services and not intended for resale. Includes Operating Right of Use Assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "prefdivis",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Preferred Dividends Income Statement Impact \u2014 [Income Statement] Income statement item reflecting dividend payments to preferred stockholders. Subtracted from Net Income to Parent [NetInc] to obtain Net Income to Common Stockholders [NetIncCmn]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ps1",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Price to Sales Ratio \u2014 [Metrics] An alternative calculation method to [PS]; that measures the ratio between a company's [Price] and it's [SPS].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "receivables",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Trade and Non-Trade Receivables \u2014 [Balance Sheet] A component of [Assets] representing trade and non-trade receivables. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "retearn",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Accumulated Retained Earnings (Deficit) \u2014 [Balance Sheet] A component of [Equity] representing the cumulative amount of the entities undistributed earnings or deficit. May only be reported annually by certain companies; rather than quarterly.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "revenueusd",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Revenues (USD) \u2014 [Income Statement] [Revenue] in USD; converted by [FXUSD]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "rnd",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Research and Development Expense \u2014 [Income Statement] A component of [OpEx] representing the aggregate costs incurred in a planned search or critical investigation aimed at discovery of new knowledge with the hope that such knowledge will be useful in developing a new product or service. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ros",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Return on Sales \u2014 [Metrics] Return on Sales is a ratio to evaluate a company's operational efficiency; calculated by dividing [EBIT] by [Revenue]. ROS is often a component of DuPont ROE analysis.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sbcomp",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Share Based Compensation \u2014 [Cash Flow Statement] A component of [NCFO] representing the total amount of noncash; equity-based employee remuneration. This may include the value of stock or unit options; amortization of restricted stock or units; and adjustment for officers' compensation. As noncash; this element is an add back when calculating net cash generated by operating activities using the indirect method.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sgna",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Selling General and Administrative Expense \u2014 [Income Statement] A component of [OpEx] representing the aggregate total costs related to selling a firm's product and services; as well as all other general and administrative expenses. Direct selling expenses (for example; credit; warranty; and advertising) are expenses that can be directly linked to the sale of specific products. Indirect selling expenses are expenses that cannot be directly linked to the sale of specific products; for example telephone expenses; Internet; and postal charges. General and administrative expenses include salaries of non-sales personnel; rent; utilities; communication; etc. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sharefactor",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Share Factor \u2014 [Entity] Share factor is a multiplicand in the calculation of [MarketCap] and is used to adjust for: American Depository Receipts (ADRs) that represent more or less than 1 underlying share; and; companies which have different earnings share for different share classes (eg Berkshire Hathaway - BRK.B).",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sharesbas",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "units",
+    "definition": "Shares (Basic) \u2014 [Entity] The number of shares or other units outstanding of the entity's capital or common stock or other ownership interests; as stated on the cover of related periodic report (10-K/10-Q); after adjustment for stock splits.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sps",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Sales per Share \u2014 [Metrics] Sales per Share measures the ratio between [RevenueUSD] and [SharesWA] as adjusted by [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "tangibles",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Tangible Asset Value \u2014 [Metrics] The value of tangibles assets calculated as the difference between [Assets] and [Intangibles].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "taxassets",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Tax Assets \u2014 [Balance Sheet] A component of [Assets] representing tax assets and receivables. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "taxexp",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Income Tax Expense \u2014 [Income Statement] Amount of current income tax expense (benefit) and deferred income tax expense (benefit) pertaining to continuing operations. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "taxliabilities",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Tax Liabilities \u2014 [Balance Sheet] A component of [Liabilities] representing outstanding tax liabilities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "tbvps",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency/share",
+    "definition": "Tangible Assets Book Value per Share \u2014 [Metrics] Measures the ratio between [Tangibles] and [SharesWA] as adjusted by [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "workingcapital",
+    "type": "in blob",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Working Capital \u2014 [Metrics] Working capital measures the difference between [AssetsC] and [LiabilitiesC].",
+    "source": "Sharadar `descriptions` table"
+   }
+  ]
+ },
+ "fundamentals": {
+  "origin": "DERIVED (sf1 ARY)",
+  "key": "(ticker, fiscal_year)",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "instrument symbol",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "fiscal_year",
+    "type": "INTEGER",
+    "unit": "",
+    "pk": 0,
+    "definition": "fiscal year end",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "roa",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "return on assets (net income / total assets)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "cfo",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "operating cash flow / total assets",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "d_roa",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "change in ROA vs prior year",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "accruals",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "CFO \u2212 net income (accrual quality)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "d_leverage",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "change in long-term-debt-to-assets",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "d_liquidity",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "change in current ratio",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "equity_issuance",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "new share issuance (Piotroski criterion)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "d_gross_margin",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "change in gross margin",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "d_asset_turnover",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "change in asset turnover",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "f_score",
+    "type": "INTEGER",
+    "unit": "",
+    "pk": 0,
+    "definition": "Piotroski F-Score 0\u20139 (sum of the 9 binary criteria)",
+    "source": "this repo (derived)"
+   }
+  ]
+ },
+ "quarterly_statements": {
+  "origin": "DERIVED (sf1 ARQ)",
+  "key": "(ticker, period)",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "instrument symbol",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "period",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "report period end (YYYY-MM-DD)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "net_income",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "net income, ARQ",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "revenue",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "revenue, ARQ",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "gross_profit",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "gross profit, ARQ",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "operating_cash_flow",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "CFO, ARQ",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "total_assets",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "total assets, ARQ",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "total_liabilities",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "total liabilities, ARQ",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "current_assets",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "current assets, ARQ",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "current_liabilities",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "current liabilities, ARQ",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "shares_out",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "shares outstanding, ARQ",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "roa",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "net income / total assets",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "cfo",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "operating cash flow / total assets",
+    "source": "this repo (derived)"
+   }
+  ]
+ },
+ "ratios": {
+  "origin": "DERIVED (sf1 MRY latest + price)",
+  "key": "ticker (one row per name)",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "instrument symbol",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "as_of",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "build date",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "trailing_pe",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "trailing P/E (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "forward_pe",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "ALWAYS NULL \u2014 SF1 has no forward estimates",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "price_to_book",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "P/B (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "price_to_sales",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "P/S (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "roe",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "return on equity (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "roa",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "return on assets (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "net_margin",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "net margin (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "gross_margin",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "gross margin (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "operating_margin",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "operating margin (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "debt_to_equity",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "D/E (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "current_ratio",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "current ratio (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "dividend_yield",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "dividend yield (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "market_cap",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "market cap (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "enterprise_value",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "EV (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "ev_to_ebitda",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "EV/EBITDA (MRY)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "beta",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "ALWAYS NULL \u2014 SF1 has no beta",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "shares_outstanding",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "shares outstanding (MRY)",
+    "source": "this repo (derived)"
+   }
+  ]
+ },
+ "universe_pit": {
+  "origin": "DERIVED (master+prices+sf1)",
+  "key": "(as_of, ticker)",
+  "columns": [
+   {
+    "name": "as_of",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "trading day (YYYY-MM-DD)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "ticker",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "instrument symbol",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "category",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "master category (Domestic Common Stock Primary/Second, \u2026)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "exchange",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "master exchange",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "isdelisted",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "Y/N (master)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "sector",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "Sharadar taxonomy sector",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "industry",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "Sharadar taxonomy industry",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "price",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "most recent valid as-traded close \u2264 as_of (per-day pointer, not run-start)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "mcap",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "PIT market cap = price \u00d7 shareswa (ARQ/ARY \u2264 as_of)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "dvol_avg",
+    "type": "REAL",
+    "unit": "",
+    "pk": 0,
+    "definition": "trailing 20-session average dollar volume (\u226510 sessions)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "dvol_days",
+    "type": "INTEGER",
+    "unit": "",
+    "pk": 0,
+    "definition": "sessions with volume in the trailing window",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "firstpricedate",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "master price-history start",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "lastpricedate",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "master price-history end (delisting date)",
+    "source": "this repo (derived)"
+   }
+  ]
+ },
+ "classifications": {
+  "origin": "DERIVED (master + GICS map)",
+  "key": "ticker",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "instrument symbol",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "sector",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "GICS sector label (11)",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "industry",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "GICS industry label",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "as_of",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "map build date",
+    "source": "this repo (derived)"
+   }
+  ]
+ },
+ "universe": {
+  "origin": "DERIVED (iShares IWV)",
+  "key": "ticker",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "instrument symbol",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "name",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "company name",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "source",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "IWV",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "added_at",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "row added timestamp",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "figi",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "FIGI identifier",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "cik",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "SEC CIK",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "sic",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "SIC code",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "sic_description",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "SIC description",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "lei",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "legal entity identifier",
+    "source": "this repo (derived)"
+   }
+  ]
+ },
+ "snapshots": {
+  "origin": "ledger (every pull)",
+  "key": "id",
+  "columns": [
+   {
+    "name": "id",
+    "type": "INTEGER",
+    "unit": "",
+    "pk": 0,
+    "definition": "auto-increment",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "source",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "provider name",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "pulled_at",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "UTC pull timestamp",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "as_of",
+    "type": "TEXT",
+    "unit": "",
+    "pk": 0,
+    "definition": "vendor as-of date",
+    "source": "this repo (derived)"
+   },
+   {
+    "name": "row_count",
+    "type": "INTEGER",
+    "unit": "",
+    "pk": 0,
+    "definition": "rows loaded",
+    "source": "this repo (derived)"
+   }
+  ]
+ }
+}

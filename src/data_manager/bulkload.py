@@ -127,6 +127,29 @@ def load_prices(path, conn, commit_every=200000):
     flush(); conn.commit()
     return n
 
+def load_descriptions(path, conn, commit_every=5000):
+    """Sharadar's field dictionary (one row per table+indicator): the
+    authoritative column definitions for every vendor table. 7 cols:
+    table, indicator, isfilter, isprimarykey, title, description, unittype."""
+    n = 0; rows = []
+    def flush():
+        nonlocal rows
+        conn.executemany(
+            "INSERT OR REPLACE INTO descriptions "
+            "(table_name, indicator, isfilter, isprimarykey, title, description, unittype) "
+            "VALUES (?,?,?,?,?,?,?)", rows)
+        rows = []
+    for r in stream_csv(path):
+        rows.append((r.get("table"), r.get("indicator"), r.get("isfilter"),
+                     r.get("isprimarykey"), r.get("title"), r.get("description"),
+                     r.get("unittype")))
+        n += 1
+        if len(rows) >= commit_every:
+            flush(); conn.commit()
+    flush(); conn.commit()
+    return n
+
+
 def load_fundamentals(path, conn):
     TYPED = ["revenue","netinc","netinccmn","assets","liabilities","equity","cashneq","ncfo",
              "capex","fcf","marketcap","ev","pe","pb","ps","price","eps","dps","divyield",

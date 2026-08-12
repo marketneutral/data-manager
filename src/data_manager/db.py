@@ -87,6 +87,17 @@ CREATE TABLE IF NOT EXISTS corporate_actions (
     PRIMARY KEY (ticker, date, action, value)
 );
 
+CREATE TABLE IF NOT EXISTS descriptions (
+    table_name   TEXT,
+    indicator    TEXT,
+    isfilter     TEXT,
+    isprimarykey TEXT,
+    title        TEXT,
+    description  TEXT,
+    unittype     TEXT,
+    PRIMARY KEY (table_name, indicator)
+);
+
 CREATE TABLE IF NOT EXISTS sp500_membership (
     ticker TEXT, date TEXT, action TEXT, name TEXT,
     contraticker TEXT, contraname TEXT, note TEXT,

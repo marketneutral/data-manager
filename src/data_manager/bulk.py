@@ -31,6 +31,7 @@ BULK_TABLES = {
     "metrics": "load_metrics",
     "sp500": "load_sp500",
     "fundamentals": "load_fundamentals",
+    "descriptions": "load_descriptions",  # vendor field dictionary (all tables)
 }
 
 # tables whose contents get wiped before a from-zero load
@@ -175,11 +176,13 @@ def bulk_update(dest_dir: str = DEFAULT_DIR, conn=None, tables=None,
             loaded[t] = _load(t, path, conn)
         else:
             skipped.append(t)
-    if derive and loaded:
+    loaded_core = {t: n for t, n in loaded.items() if t != "descriptions"}
+    if derive and loaded_core:
         print("[bulk] deriving piotroski/quarterly/ratios", flush=True)
-        loaded["piotroski"] = build_piotroski(conn)
-        loaded["quarterly"] = build_quarterly(conn)
-        loaded["ratios"] = build_ratios(conn)
-    if pit and loaded:
-        loaded["pit"] = build_universe_pit_history(conn)
+        loaded_core["piotroski"] = build_piotroski(conn)
+        loaded_core["quarterly"] = build_quarterly(conn)
+        loaded_core["ratios"] = build_ratios(conn)
+    if pit and loaded_core:
+        loaded_core["pit"] = build_universe_pit_history(conn)
+    loaded = loaded_core
     return {"loaded": loaded, "skipped": skipped}
