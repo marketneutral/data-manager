@@ -30,6 +30,7 @@ from pathlib import Path
 from IPython.display import display, Markdown
 import numpy as np
 import pandas as pd
+pd.set_option("display.max_colwidth", None)   # lineage tables carry long notes; never ellipsize
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -107,7 +108,7 @@ dimension, dissects the PIT universe (market-cap bins, sector and industry
 coverage), gives tear sheets for a mega / mid / small cap plus a **dead-stock
 exhibit** (Lehman Brothers), and reports freshness and data-quality findings.
 Numbers are as of the 2026-08-11 warehouse build; the PIT universe was rebuilt
-2026-08-12 after a profile-carriage bug fix (see §5).
+2026-08-12 after a profile-carriage bug fix (see §6).
 :::
 
 # Warehouse at a glance
@@ -167,7 +168,7 @@ raw = pd.DataFrame([
  ["securities_master", "tickers zip (SEP stocks + SFP funds)", "whole Sharadar tickers table; every instrument incl. 19,227 delisted; `table` column marks the source zip (stocks=21,960 / funds=9,782)"],
  ["corporate_actions", "actions zip", "splits, dividends, listed, delisted, ticker changes, spinoffs, bankruptcies (672k rows; 14× the API's 47k)"],
  ["metrics", "metrics zip", "latest + multi-date snapshot metrics: price, betas (1y/5y), MA50/200, 52w hi/lo, returns 1y/5y/YTD, volumes, dividend yields"],
- ["sf1", "fundamentals zip", "112 fields × 6 reporting dimensions (ARQ/ARY/ART/MRQ/MRY/MRT); 29 columns exposed typed, the full row kept compressed in `data`; §4 + appendix is the reference"],
+ ["sf1", "fundamentals zip", "112 fields × 6 reporting dimensions (ARQ/ARY/ART/MRQ/MRY/MRT); 29 columns exposed typed, the full row kept compressed in `data`; §5 + appendix is the reference"],
  ["prices", "stocks zip + funds zip", "as-traded OHLCV + total-return factor. Bulk columns are split-adjusted; the loader stores as-traded (close=closeunadj, OHLC × closeunadj/close) and adjustment=closeadj/closeunadj"],
  ["sp500_membership", "Sharadar API (whole table)", "S&P500 membership history 1957 → now with add/drop actions (59.6k rows)"],
 ]).rename(columns={0: "table", 1: "source", 2: "notes"})
@@ -178,11 +179,11 @@ raw
 #| label: derived_tables
 der = pd.DataFrame([
  ["universe", "iShares IWV holdings CSV (free, 1 request)", "Russell-3000 snapshot universe; superseded as THE universe by universe_pit in warehouse mode"],
- ["classifications", "securities_master.sector/industry + SHARADAR_TO_GICS map", "GICS 11-label allowlist for stock-universe construction; covers the 2,589 iShares-era names only (gap, §8)"],
+ ["classifications", "securities_master.sector/industry + SHARADAR_TO_GICS map", "GICS 11-label allowlist for stock-universe construction; covers the 2,589 iShares-era names only (gap, §9)"],
  ["fundamentals", "sf1 ARY rows", "Piotroski F-Score: 9 binary tests (ROA, CFO, \u0394ROA, accruals, \u0394leverage, \u0394liquidity, equity issuance, \u0394gross margin, \u0394asset turnover) + f_score 0–8"],
  ["quarterly_statements", "sf1 ARQ rows", "13-column quarterly statement mirror (income, balance, cash-flow plus ROA/CFO) from the ARQ rows"],
  ["ratios", "sf1 MRY rows", "latest-calendardate MRY row → trailing PE, fwd PE (NULL from SF1), P/B, P/S, ROE/ROA, margins, D/E, current ratio, div yield, EV multiples"],
- ["universe_pit", "securities_master + prices + sf1 (ARQ/ARY)", "point-in-time investable universe for every trading day; §5 details the algorithm and its 2026-08-12 fix"],
+ ["universe_pit", "securities_master + prices + sf1 (ARQ/ARY)", "point-in-time investable universe for every trading day; §6 details the algorithm and its 2026-08-12 fix"],
 ]).rename(columns={0: "table", 1: "built from", 2: "construction"})
 der
 ```
@@ -198,9 +199,125 @@ where $P^{\mathrm{adj}}$ is the split- *and* dividend-adjusted close
 (Sharadar `closeadj`). The as-traded OHLC stored in the table is recovered from
 the bulk file by scaling the split-adjusted OHLC with the same-row split factor
 `closeunadj/close`; therefore **`close` is the true as-traded price** (it gaps at
-stock splits — see NVDA 2024-06-10 in §6) **and the adjustment factor only
-matters for total-return series** (§9 quantifies the no-trade and
+stock splits — see NVDA 2024-06-10 in §7) **and the adjustment factor only
+matters for total-return series** (§10 quantifies the no-trade and
 adjustment-tail rows).
+
+# Securities master & corporate actions
+
+The two "who and what happened" tables. Both are raw Sharadar bulk files
+(`tickers` zip and `actions` zip), and both are survivorship-free — a name
+that delisted in 2008 keeps its row and its complete event history, which
+is exactly what the PIT universe and the dead-stock exhibit rely on.
+
+## The securities master (`securities_master`, 31,742 rows)
+
+One row per instrument — US-listed stocks, ADRs, preferred, warrants, and
+funds — the vendor's universe cube. The primary key is **`permaticker`**
+(the vendor's stable internal id); `ticker` is the instrument's **current /
+last symbol**. This matters: Lehman's master row is `LEHMQ`, not `LEH` —
+the historical symbols live only in `corporate_actions` ticker-change rows,
+so never assume `ticker` was valid throughout the price history.
+
+```{python}
+#| label: master_counts
+mc = q("""SELECT `table` AS kind, COUNT(*) AS instruments,
+          SUM(isdelisted='Y') AS delisted,
+          MIN(firstpricedate) AS first, MAX(lastpricedate) AS last
+          FROM securities_master GROUP BY `table`""")
+mc
+```
+
+```{python}
+#| label: master_snapshot
+mmm = q("""SELECT ticker, name, exchange, isdelisted, category, cusips,
+           sector, industry, sicsector, sicindustry, famaindustry,
+           currency, location, firstpricedate, lastpricedate, `table`
+           FROM securities_master WHERE ticker='AAPL'""").T.reset_index()
+mmm.columns = ["field", "value"]
+mmm["value"] = mmm["value"].astype(str)
+mmm
+```
+
+Key columns (AAPL above is a live example):
+
+| column | meaning |
+|---|---|
+| `permaticker` / `ticker` | stable id / current-last symbol (master PK is permaticker) |
+| `name`, `exchange` | legal name; NASDAQ/NYSE/NYSEMKT/... (`securities_master.exchange`, not the price source) |
+| `isdelisted` | `Y`/`N` — full-table flag; `Y` for 19,227 rows (15,639 stocks + 3,588 funds), matching the 19,227 `delisted` action rows 1:1 |
+| `category` | instrument class: Domestic Common Stock (+ Primary/Second class), ADR, preferred, warrant, Canadian … — one of the inputs to PIT membership |
+| `sector` / `industry` | Sharadar's own taxonomy (e.g. Technology / Consumer Electronics) — **full-coverage** classification of ~99.4% of stocks; do not confuse with the GICS labels in `classifications` (§9) |
+| `sicsector` / `sicindustry`, `famaindustry` | two further taxonomies on the same row (SIC-based; Fama-French 12/48) |
+| `scalemarketcap` / `scalerevenue` | vendor size-class labels (1–Nano … 6–Mega) for snapshot mcap/revenue |
+| `cusips`, `figi`, `currency`, `location` | identifiers and domicile (currency is usually USD; ADRs included) |
+| `firstpricedate` / `lastpricedate` | price-history bounds in `prices` — the delisting date for dead names (LEHMQ: 2008-10-15) |
+| `firstquarter` / `lastquarter` | SF1 coverage bounds (AAPL 1992-12-31 → 2026-06-30) |
+| `table` | source zip: `stocks` = 21,960 / `funds` = 9,782 (funds are reference series only) |
+
+```{python}
+#| label: master_exchanges
+exch = q("SELECT exchange, COUNT(*) n FROM securities_master WHERE `table`='stocks' GROUP BY exchange ORDER BY n DESC LIMIT 6")
+cat = q("SELECT category, COUNT(*) n FROM securities_master WHERE `table`='stocks' GROUP BY category ORDER BY n DESC LIMIT 6")
+exch.columns = ["exchange", "stocks"]; cat.columns = ["category", "stocks"]
+exch
+```
+
+## Corporate actions (`corporate_actions`, 670,752 rows)
+
+One row per corporate event. The key is `(ticker, date, action)` — the same
+ticker can have several events on one date (e.g. NVDA split 2024-06-10 and
+dividend 2024-06-11 the next day). Every row carries `ticker`, `date`,
+`action`, `name`, plus two "contra" columns (`contraticker`, `contraname`)
+for events that reference a second instrument.
+
+```{python}
+#| label: action_counts
+ac = q("""SELECT action, COUNT(*) n, COUNT(DISTINCT ticker) tickers
+          FROM corporate_actions GROUP BY action ORDER BY n DESC""")
+ac
+```
+
+| action | count | meaning | `value` / `contraticker` semantics |
+|---|---|---|---|
+| `dividend` | 550k | cash dividend, `date` = ex-date | value = \$ per share (AAPL 0.24–0.27; NVDA 0.004 → 0.01 → 0.25) |
+| `listed` / `delisted` | 23,357 / 19,227 | inception and end markers; delisted count == master `isdelisted='Y'` count (coherence check) | — |
+| `tickerchangeto` / `tickerchangefrom` | 13,451 / 13,451 | paired symbol changes (LEH → LEHMQ 2008-10-15) | contraticker = new symbol |
+| `split` | 12,923 | stock split, `date` = effective date | value = ratio s in s:1 (NVDA 4.0 / 10.0; TNXP 0.03125 = reverse) — one of the two inputs to `prices.adjustment` |
+| `acquisitionof` / `acquisitionby` | 7,594 / 7,514 | target side / acquirer side | contraticker = counterparty |
+| `relation` | 7,872 | parent ↔ child instrument pairs (share classes) | contra columns = the other class |
+| `initiated` | 8,407 | index/benchmark first appearance (^VIX, ^RUT, ^IXIC at 1997-12-31) | — |
+| `bankruptcyliquidation` | 3,348 | bankruptcy-terminated names (LEHMQ: 2008-10-06) | — |
+| `spinoff` / `spunofffrom` / `spinoffdividend` | 556 / 555 / 519 | spin-offs, both sides + special dividend flavor | value = new shares per original share (MTCH 2.0) |
+| `adrratiosplit` | 386 | ADR ratio changes | value = new ADR ratio |
+| `regulatorydelisting` / `voluntarydelisting` / `mergerto` / `mergerfrom` | 887 / 378 / 134 / 134 | delisting flavors and merger sides | — |
+
+```{python}
+#| label: action_samples
+sx = q("""SELECT ticker, date, action, value, contraticker FROM corporate_actions
+          WHERE (ticker='NVDA' AND date IN ('2021-07-20','2024-06-10'))
+             OR (ticker='LEHMQ' AND date IN ('2008-10-06','2008-10-15'))
+             OR (ticker='MTCH' AND action='spinoff')
+             OR (action='initiated' AND ticker='^VIX')
+          ORDER BY date""")
+sx
+```
+
+**Semantics worth knowing.** (1) `date` is the *effective* date — ex-date for
+dividends, split-date for splits — and it is the same date the price
+series moves on, so the rows pair 1:1 with the steps of the `adjustment`
+chain (§4). (2) `value` has **no single unit**: split ratio and
+`$`/share for dividends are clean and verified; `spinoff` value is shares
+per original share; `tickerchangeto/from` and `relation` put the
+counterparty in the contra columns; for `delisted`/`acquisitionof` rows,
+`value` is a vendor context number (delisting consideration in vendor
+units — *not* the last trade price, which lives in `prices` /
+`master.lastpricedate`), so verify before using it numerically. (3) Contra
+columns are `N/A` unless the event is paired. (4) The action ledger is
+*not* truncated per instrument: it is the complete hand-maintained vendor
+history, which is what makes it trustworthy evidence for delisting and
+bankruptcy questions (the LEHMQ exhibit in §8 is built straight off these
+rows).
 
 # Price coverage & depth
 
@@ -1133,7 +1250,7 @@ snap.reset_index(drop=True)
 17.1 → 15.9 GB, freelist 0. Every query in this report completes within
 seconds against the 15.9 GB file thanks to `idx_prices_date` (date-first
 covering index) and the memory-tuned read connection. The PIT rebuild of
-2026-08-12 (profile fix, §5) is validated by the regression test
+2026-08-12 (profile fix, §6) is validated by the regression test
 `test_pit_history_profile_is_latest_quote_not_run_start` (86/86 tests green).
 
 # Accessing the data (SQL & accessor API)

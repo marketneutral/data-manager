@@ -62,6 +62,27 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | universe_pit | derived (master+prices+sf1) | (as_of,ticker) | investable membership per trading day |
 | snapshots | ledger | id | per-pull record (source, pulled_at, as_of, row_count) |
 
+## securities_master & corporate_actions quick reference
+
+* `securities_master`: one row per instrument (31,742; stocks 21,960 /
+  funds 9,782). PK = `permaticker`; `ticker` is the CURRENT/LAST symbol
+  (Lehman = LEHMQ even for its NYSE era; historical symbols live only in
+  `corporate_actions.tickerchangeto/from`). `isdelisted` Y for 19,227 (==
+  the 19,227 `delisted` action rows, 1:1). `sector/industry` is the
+  Sharadar taxonomy (~99.4% stock coverage) — NOT GICS (that's
+  `classifications`, 2,589 names only). `firstpricedate/lastpricedate`
+  bound `prices`; `lastpricedate` = delisting date for dead names.
+* `corporate_actions` (670,752): one row per event, key (ticker,date,
+  action). `value` units are action-specific and verified for: split
+  (ratio s in s:1 — feeds the adjustment chain), dividend ($/share,
+  date = ex-date), spinoff (new shares per original share). Paired events
+  use `contraticker/contraname` (tickerchange, acquisition, relation,
+  spinoff sides); N/A otherwise. For `delisted`/`acquisitionof`,
+  `value` is a vendor context number, NOT the last trade price (use
+  `prices` / `master.lastpricedate`). `initiated` rows are index/benchmark
+  first-appearance (^VIX etc.). Report §3 documents both tables with live
+  samples.
+
 ## Prices: the adjustment contract (critical)
 
 * `close` is the **as-traded** price (it gaps at stock splits).

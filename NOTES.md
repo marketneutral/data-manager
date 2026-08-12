@@ -348,3 +348,22 @@ correct order / no deletes at all).
   proof, consequences table, live identity verification, NVDA as-of-2021
   demo ($13.34 stored vs $535.54 PIT level), and the 3 backtest rules
   (screens → as-traded; returns → stored adjusted; levels → rebase).
+## Report §3: securities master & corporate actions (2026-08-12)
+
+- New section on the two "who/what happened" tables: securities_master
+  (31,742 instruments; PK permaticker, ticker=current/last symbol,
+  isdelisted Y=19,227 == delisted action rows; Sharadar taxonomy
+  sector/industry ~99.4% coverage; firstpricedate/lastpricedate bounds;
+  table=stocks/funds split) and corporate_actions (670,752 events; key
+  (ticker,date,action); verified value units: split=ratio, dividend=$/share
+  (ex-date), spinoff=shares/original; contra columns for paired events;
+  delisted/acquisitionof value = vendor context number, NOT last price;
+  initiated = index first-appearance).
+- Replaced subsections 3.1/3.2 → the report is now 1..12 sections
+  (inserted as new §3): Price coverage=§4, SF1=§5, PIT=§6, Tears=§7,
+  Dead-stock=§8, GICS=§9, Freshness=§10, Access=§11, Hygiene=§12; all
+  prose cross-refs renumbered.
+- Fixed a long-standing render bug: §2 lineage tables (raw/derived) were
+  truncated at pandas' default max_colwidth=50 so the full notes column
+  (incl. refs) was invisible in HTML. `pd.set_option("display.max_colwidth",
+  None)` in setup → full text now renders.
