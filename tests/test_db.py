@@ -84,6 +84,29 @@ def test_connect_migration_preserves_existing_rows(db_path):
     conn.close()
 
 
+def test_prices_date_index_created():
+    c = db.connect(":memory:")
+    idx = [r[1] for r in c.execute("PRAGMA index_list('prices')")]
+    assert "idx_prices_date" in idx
+    c.close()
+
+
 def test_default_db_expands_user_home():
     assert "~" not in str(db.DEFAULT_DB)
     assert db.DEFAULT_DB.is_absolute()
+
+
+def test_optimize_db(tmp_path):
+    from data_manager import dbopt
+    p = tmp_path / "o.db"
+    c = db.connect(p)
+    c.execute("INSERT INTO prices (ticker, date, close, volume, adjustment) VALUES ('A','2026-01-01',5,100,1.0)")
+    c.execute("INSERT INTO prices (ticker, date, close, volume, adjustment) VALUES ('A','2026-01-02',6,100,1.0)")
+    c.commit()
+    c.close()
+    c = db.connect(p)
+    r = dbopt.optimize_db(c, backup_path=str(tmp_path / "o.bak.db"), vacuum=True, quick=True)
+    assert r["integrity"] == "ok"
+    assert r["backup"].endswith("o.bak.db")
+    assert "idx_prices_date" in r["indexes"]
+    c.close()

@@ -24,6 +24,7 @@ from .universe import (
     build_quarterly,
     build_ratios,
     build_universe_pit,
+    build_universe_pit_history,
     universe_tickers,
 )
 from . import enrich
@@ -85,7 +86,10 @@ def main(argv=None):
     p_br = sub.add_parser("build-ratios", help="Local: derive ratio snapshots from the sf1 MRY mirror.")
     p_br.add_argument("--db", default=None)
     p_pit = sub.add_parser("build-universe-pit", help="Construct a PIT investable universe (master+prices+sf1).")
-    p_pit.add_argument("--asof", default=None, help="YYYY-MM-DD (default today).")
+    p_pit.add_argument("--asof", default=None, help="YYYY-MM-DD (default today; ignored with --history).")
+    p_pit.add_argument("--history", action="store_true", help="build the universe for EVERY trading day (1998->now)")
+    p_pit.add_argument("--start", default=None, help="history: start date YYYY-MM-DD")
+    p_pit.add_argument("--end", default=None, help="history: end date YYYY-MM-DD")
     p_pit.add_argument("--min-price", type=float, default=2.0)
     p_pit.add_argument("--min-mcap", type=float, default=300_000_000.0)
     p_pit.add_argument("--min-dvol", type=float, default=5_000_000.0)
@@ -115,6 +119,11 @@ def main(argv=None):
     p_bz.add_argument("--no-derive", action="store_true")
     p_bz.add_argument("--no-pit", action="store_true")
     p_bz.add_argument("--db", default=None)
+    p_opt = sub.add_parser("optimize-db", help="Backup (optional) + checkpoint + analyze + integrity + vacuum.")
+    p_opt.add_argument("--backup", default=None, help="path for a consistent backup before optimizing")
+    p_opt.add_argument("--no-vacuum", action="store_true")
+    p_opt.add_argument("--quick", action="store_true", help="quick_check instead of full integrity_check")
+    p_opt.add_argument("--db", default=None)
     p_bu = sub.add_parser("bulk-update", help="Incremental update (manifest-skipped downloads + reload + derive).")
     p_bu.add_argument("--tables", default=None, help="comma list (default: all)")
     p_bu.add_argument("--force", action="store_true")
@@ -210,11 +219,20 @@ def main(argv=None):
         print(f"Ratio snapshots derived: {n}.")
     elif args.command == "build-universe-pit":
         types = tuple(args.types.split(",")) if args.types else None
-        n = build_universe_pit(conn, as_of=args.asof, min_price=args.min_price,
-                               min_mcap=args.min_mcap, min_dvol=args.min_dvol,
-                               lookback=args.lookback, min_dvol_days=args.min_dvol_days,
-                               max_quote_age=args.max_quote_age, types=types)
-        print(f"PIT universe members as of {args.asof or 'today'}: {n}.")
+        if args.history:
+            n = build_universe_pit_history(conn, min_price=args.min_price,
+                                           min_mcap=args.min_mcap, min_dvol=args.min_dvol,
+                                           lookback=args.lookback,
+                                           min_dvol_days=args.min_dvol_days,
+                                           max_quote_age=args.max_quote_age,
+                                           types=types, start=args.start, end=args.end)
+            print(f"PIT universe history built: {n} stock-days.")
+        else:
+            n = build_universe_pit(conn, as_of=args.asof, min_price=args.min_price,
+                                   min_mcap=args.min_mcap, min_dvol=args.min_dvol,
+                                   lookback=args.lookback, min_dvol_days=args.min_dvol_days,
+                                   max_quote_age=args.max_quote_age, types=types)
+            print(f"PIT universe members as of {args.asof or 'today'}: {n}.")
     elif args.command == "update-sp500":
         n = update_sp500(conn)
         print(f"S&P500 membership rows: {n}.")
@@ -225,6 +243,9 @@ def main(argv=None):
               "fundamentals": BL.load_fundamentals}[args.table]
         n = fn(args.file, conn)
         print(f"Loaded {n} rows into {args.table}.")
+    elif args.command == "optimize-db":
+        from . import dbopt as OP
+        OP.optimize_db(conn, backup_path=args.backup, vacuum=not args.no_vacuum, quick=args.quick)
     elif args.command in ("bulk-download", "bulk-fromzero", "bulk-update"):
         from . import bulk as B
         d = args.dir or B.DEFAULT_DIR

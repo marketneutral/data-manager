@@ -745,6 +745,7 @@ def build_universe_pit(conn=None, as_of=None, min_price: float = 2.0,
     """
     conn = conn or db.connect()
     as_of = as_of or dt.date.today().isoformat()
+    types = types or _PIT_DEFAULT_TYPES
     placeholders = ",".join("?" * len(types))
     cands = conn.execute(
         "SELECT ticker, category, exchange, isdelisted, sector, industry,"
@@ -787,3 +788,111 @@ def build_universe_pit(conn=None, as_of=None, min_price: float = 2.0,
         n += 1
         conn.commit()
     return n
+
+def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
+                               min_dvol=5_000_000.0, lookback=20,
+                               min_dvol_days=10, max_quote_age=10,
+                               types=_PIT_DEFAULT_TYPES, start=None, end=None,
+                               chunk=400_000):
+    """PIT investable universe for EVERY trading day.
+
+    Strategy (fast, unlike per-date loops): for each stock, walk its own price
+    rows once, keeping a rolling $volume window (last `lookback` sessions) and
+    a pointer to the latest as-reported shares (SF1 ARQ/ARY <= row date).
+    A price row is "valid" when close >= min_price, rolling avg $volume >=
+    min_dvol with >= min_dvol_days sessions, and close*shareswa >= min_mcap.
+    Membership on any calendar day D requires the most recent valid price row
+    <= D to be within max_quote_age calendar days (fresh quote). Validity runs
+    are merged and expanded onto the global trading-day calendar, stored in
+    universe_pit(as_of, ticker, ...) -- a row per (day, member).
+
+    Returns the number of member-day rows stored.
+    """
+    import bisect
+    conn = conn or db.connect()
+    types = types or _PIT_DEFAULT_TYPES
+    trading = [r[0] for r in conn.execute("SELECT DISTINCT date FROM prices ORDER BY date")]
+    if start:
+        trading = [d for d in trading if d >= start]
+    if end:
+        trading = [d for d in trading if d <= end]
+    placed = ",".join("?" * len(types))
+    cands = conn.execute(
+        "SELECT ticker, category, exchange, isdelisted, sector, industry,"
+        " firstpricedate, lastpricedate FROM securities_master"
+        ' WHERE "table"=\'stocks\' AND category IN (' + placed + ")",
+        list(types)).fetchall()
+    total = 0
+    rows = []
+    def flush():
+        nonlocal rows
+        conn.executemany("INSERT OR REPLACE INTO universe_pit "
+                         "(as_of, ticker, category, exchange, isdelisted, sector, industry,"
+                         " price, mcap, dvol_avg, dvol_days, firstpricedate, lastpricedate)"
+                         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        conn.commit()
+        rows.clear()
+    n_members = 0
+    for ticker, category, exchange, isdelisted, sector, industry, first, last in cands:
+        if isdelisted == "Y" and last and last < (trading[0] if trading else "9999"):
+            continue
+        prices = conn.execute(
+            "SELECT date, close, volume FROM prices WHERE ticker=? ORDER BY date",
+            (ticker,)).fetchall()
+        if not prices:
+            continue
+        shares = conn.execute(
+            "SELECT date, shareswa FROM sf1 WHERE ticker=? AND dimension IN ('ARQ','ARY')"
+            " AND shareswa IS NOT NULL ORDER BY date", (ticker,)).fetchall()
+        si = 0
+        # rolling window over sessions (rows are trading sessions for this ticker)
+        wsum, wct, wq = 0.0, 0, []
+        valid = []          # (price_row_date, last_close, mcap, dvol_avg, dvol_ct)
+        for d, close, volume in prices:
+            if d < (trading[0] if trading else "0000") or close is None:
+                continue
+            while si < len(shares) and shares[si][0] <= d:
+                si += 1
+            swa = shares[si - 1][1] if si else None
+            vol = volume or 0.0
+            wsum += close * vol
+            wq.append(close * vol)
+            wct += 1 if (volume is not None and volume > 0) else 0
+            if len(wq) > lookback:
+                drop = wq.pop(0)
+                wsum -= drop
+                wct -= 1 if drop > 0 else 0
+            dv = wsum / wct if wct >= min_dvol_days else 0.0
+            if (close >= min_price and dv >= min_dvol
+                    and swa is not None and close * swa >= min_mcap):
+                valid.append((d, close, close * swa, dv, wct))
+        if not valid:
+            continue
+        # merge validity runs: membership days for row i = [d_i, min(d_{i+1}-1, d_i+max_quote_age)]
+        runs = []
+        for i, (d, close, mcap, dv, dct) in enumerate(valid):
+            nxt = valid[i + 1][0] if i + 1 < len(valid) else (last or trading[-1])
+            end = min(nxt, _add_days(d, max_quote_age))  # calendar-day cap
+            if runs and runs[-1][1] >= d:
+                runs[-1][1] = max(runs[-1][1], end)
+            else:
+                runs.append([d, end, close, mcap, dv, dct])
+        # expand runs onto the trading calendar
+        for d0, d1, close, mcap, dv, dct in runs:
+            i0 = bisect.bisect_left(trading, d0)
+            i1 = bisect.bisect_right(trading, d1)
+            n_members += max(0, i1 - i0)
+            for idx in range(i0, i1):
+                rows.append((trading[idx], ticker, category, exchange, isdelisted,
+                             sector, industry, close, mcap, dv, dct, first, last))
+                if len(rows) >= chunk:
+                    flush()
+        total += 1
+    flush()
+    return n_members
+
+
+def _add_days(dstr, n):
+    from datetime import date as D, timedelta
+    y, m, d = map(int, dstr.split("-"))
+    return (D(y, m, d) + timedelta(days=n)).isoformat()

@@ -227,3 +227,21 @@ GOTCHA (2026-08-11): a hand-written /tmp loader script had a template bug
 loading them; reloaded from the zip - nothing lost, zips are the source of
 truth. The repo's bulk_fromzero/bulk_update have no such bug (wipe once in
 correct order / no deletes at all).
+
+## All-history PIT universe + DB optimization (2026-08-11, night)
+
+- build-universe-pit --history: universe_pit now holds a member row per
+  (TRADING DAY, MEMBER) for 1998->now: 13.46M stock-days over 7,187 dates
+  (e.g. 2,435 members 2026-08-11; 2,093 on 2020-03-23; 1,399 on 1998-07-01).
+  Algorithm: per-ticker pass over its price rows (rolling $volume window +
+  SF1 ARQ/ARY shares pointer) -> validity runs merged and expanded onto the
+  global trading calendar capped at max_quote_age calendar days past the last
+  quote. NOTE the single-date build may differ by ~1% on the same date
+  (definitional: history evaluates each day on its own quote; single-date
+  evaluates the last quote).
+- optimize-db command (src/data_manager/dbopt.py): backup -> WAL checkpoint ->
+  schema indexes (idx_prices_date = (date,ticker,close,volume) for PIT scans)
+  -> ANALYZE -> integrity_check -> VACUUM -> report. Hooked into bulk_fromzero
+  so a from-zero rebuild yields the optimized DB automatically.
+- db.connect() now sets synchronous=NORMAL, journal_size_limit=512MB,
+  cache_size=256MB, temp_store=MEMORY, mmap_size=128MB.

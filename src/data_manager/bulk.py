@@ -131,7 +131,8 @@ def _load(table: str, path: str, conn=None) -> int:
 def bulk_fromzero(dest_dir: str = DEFAULT_DIR, conn=None, pit_asof: str = None,
                   derive: bool = True, pit: bool = True) -> dict:
     """Full rebuild: download every bulk zip, wipe, load, derive, build PIT."""
-    from .universe import build_piotroski, build_quarterly, build_ratios, build_universe_pit
+    from .universe import (build_piotroski, build_quarterly, build_ratios,
+                          build_universe_pit_history)
     conn = conn or db.connect()
     print("[bulk] from-zero: downloading all tables (full history)", flush=True)
     for table in BULK_TABLES:
@@ -150,7 +151,11 @@ def bulk_fromzero(dest_dir: str = DEFAULT_DIR, conn=None, pit_asof: str = None,
         counts["quarterly"] = build_quarterly(conn)
         counts["ratios"] = build_ratios(conn)
     if pit:
-        counts["pit"] = build_universe_pit(conn, as_of=pit_asof)
+        counts["pit"] = build_universe_pit_history(conn)
+    # optimize so a from-zero rebuild yields a performant database
+    from . import dbopt as OP
+    OP.optimize_db(conn, vacuum=True, quick=True)
+    counts["optimized"] = True
     return counts
 
 
@@ -159,7 +164,8 @@ def bulk_update(dest_dir: str = DEFAULT_DIR, conn=None, tables=None,
                 pit_asof: str = None) -> dict:
     """Incremental update: only re-download + reload tables whose bulk file
     changed since the last sync (manifest), then re-derive local tables."""
-    from .universe import build_piotroski, build_quarterly, build_ratios, build_universe_pit
+    from .universe import (build_piotroski, build_quarterly, build_ratios,
+                          build_universe_pit_history)
     conn = conn or db.connect()
     tables = tables or list(BULK_TABLES)
     loaded, skipped = {}, []
@@ -175,5 +181,5 @@ def bulk_update(dest_dir: str = DEFAULT_DIR, conn=None, tables=None,
         loaded["quarterly"] = build_quarterly(conn)
         loaded["ratios"] = build_ratios(conn)
     if pit and loaded:
-        loaded["pit"] = build_universe_pit(conn, as_of=pit_asof)
+        loaded["pit"] = build_universe_pit_history(conn)
     return {"loaded": loaded, "skipped": skipped}

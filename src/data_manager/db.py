@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS prices (
     PRIMARY KEY (ticker, date)
 );
 CREATE INDEX IF NOT EXISTS idx_prices_ticker ON prices(ticker);
+-- date-first index: cross-sectional / PIT "all tickers as of date D" scans
+-- (backtests, universe construction, rolling snapshots) are range reads
+CREATE INDEX IF NOT EXISTS idx_prices_date ON prices(date, ticker, close, volume);
 
 CREATE TABLE IF NOT EXISTS classifications (
     ticker   TEXT PRIMARY KEY,
@@ -102,7 +105,7 @@ CREATE TABLE IF NOT EXISTS sf1 (
     data BLOB,          -- zlib(gzip) of the FULL SF1 row (all ~112 indicator fields)
     PRIMARY KEY (ticker, dimension, reportperiod)
 );
-CREATE INDEX IF NOT EXISTS idx_sf1_ticker_dim ON sf1(ticker, dimension);
+CREATE INDEX IF NOT EXISTS idx_sf1_ticker_dim ON sf1(ticker, dimension, date);
 
 CREATE TABLE IF NOT EXISTS metrics (
     ticker TEXT, as_of TEXT,
@@ -152,6 +155,12 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")      # concurrent readers/writers across processes
     conn.execute("PRAGMA busy_timeout=20000")    # wait for brief locks instead of crashing
+    # read/write tuning for the warehouse (research workload)
+    conn.execute("PRAGMA synchronous=NORMAL")    # WAL-safe; checkpoints fsync, not every txn
+    conn.execute("PRAGMA journal_size_limit=536870912")   # cap WAL growth (512MB) -> no checkpoint stalls
+    conn.execute("PRAGMA cache_size=-65536")     # 256MB page cache for scans
+    conn.execute("PRAGMA temp_store=MEMORY")     # temp sorts in RAM
+    conn.execute("PRAGMA mmap_size=134217728")   # 128MB mmap reads
     conn.executescript(SCHEMA)
 
     try:
