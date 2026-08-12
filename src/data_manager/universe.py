@@ -251,13 +251,23 @@ def update_fundamentals(tickers, conn=None, provider=None, pace: float = 0.5,
 
 
 def adjusted_prices(ticker: str, start: str | None = None, end: str | None = None,
-                    conn=None) -> list[dict]:
+                    conn=None, asof: str | None = None) -> list[dict]:
     """Return as-of OHLCV with query-time adjustments applied.
 
-    adjustment is the per-day factor (yf Adj Close / Close: splits + dividends).
-    Adjusted field = raw field * adjustment, so open/high/low/close can all be
-    adjusted consistently. Volume is left as traded. Returns dicts keyed
+    adjustment is the per-day factor (closeadj / close: splits + dividends,
+    normalized to 1.0 on the latest quote). Adjusted field = raw field *
+    adjustment, so open/high/low/close can all be adjusted consistently.
+    Volume is left as traded. Returns dicts keyed
     date/open/high/low/close/adjusted_open/.../adjustment.
+
+    asof: point-in-time anchor. adjusted_* then equal raw * adjustment /
+    adjustment(asof): the total-return series rebased so the as-of date
+    equals its as-traded price and only corporate actions known by `asof`
+    affect the level (no future events). Ratios of adjusted prices between
+    two dates <= asof are IDENTICAL with or without asof (the rebase scale
+    cancels), so plain adjusted_prices() is already PIT-safe for returns.
+    Pass asof only when you need the LEVEL (charts, TR indexes, drawdowns,
+    normalized series) or when mixing levels across different as-of dates.
     """
     conn = conn or db.connect()
     q = "SELECT date, open, high, low, close, volume, adjustment FROM prices WHERE ticker=?"
@@ -268,9 +278,17 @@ def adjusted_prices(ticker: str, start: str | None = None, end: str | None = Non
         q += " AND date<=?"; args.append(end)
     q += " ORDER BY date"
     rows = conn.execute(q, args).fetchall()
+    scale = 1.0
+    if asof is not None:
+        a = conn.execute(
+            "SELECT adjustment FROM prices WHERE ticker=? AND date<=? "
+            "ORDER BY date DESC LIMIT 1", (ticker, asof)).fetchone()
+        if a is None or a["adjustment"] is None:
+            raise ValueError(f"no adjustment on or before {asof} for {ticker}")
+        scale = a["adjustment"]
     out = []
     for r in rows:
-        adj = r["adjustment"] if r["adjustment"] is not None else 1.0
+        adj = (r["adjustment"] if r["adjustment"] is not None else 1.0) / scale
         out.append({
             "date": r["date"],
             "open": r["open"], "high": r["high"], "low": r["low"],

@@ -86,6 +86,17 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
   100` (18,073 rows carry the 8.5e18 vendor sentinel; ~1.4M junk-factor
   rows total, mostly zero-volume days); also drop `volume = 0` (5.5% of
   rows) for return work.
+* **PIT/look-ahead rule (verified identity):** stored `adjustment(t)` =
+  product of factors of ALL events after t (anchored to 1.0 at the latest
+  quote). For a decision date D: `adjustment(t) = A(t;D) * adjustment(D)`
+  where A(t;D) is the factor chain using only events known by D — the
+  correction is ONE division, not a rebuild. RETURNS (adj-close ratios)
+  are already PIT-safe (future factors cancel); LEVELS as of D must be
+  rebased: `close(t) * adjustment(t) / adjustment(D)` — 
+  `adjusted_prices(..., asof=D)` in this repo does exactly that (tests:
+  `test_adjusted_prices_rebases_to_asof`). Absolute $ thresholds or
+  cross-stock comparisons on adjusted LEVELS are never valid — use
+  as-traded close (universe_pit membership already does).
 * Convenience accessor: `adjusted_prices(ticker, start=None, end=None)` in
   `data_manager.universe` → dicts with `date/open/high/low/close/volume/
   adjustment/adjusted_open.../adjusted_close`.

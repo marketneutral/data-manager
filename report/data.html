@@ -2372,6 +2372,7 @@ window.Quarto = {
   <li><a href="#price-coverage-depth" id="toc-price-coverage-depth" class="nav-link" data-scroll-target="#price-coverage-depth"><span class="header-section-number">3</span> Price coverage &amp; depth</a>
   <ul class="collapse">
   <li><a href="#the-adjustment-factor-what-adjustment-is-precisely" id="toc-the-adjustment-factor-what-adjustment-is-precisely" class="nav-link" data-scroll-target="#the-adjustment-factor-what-adjustment-is-precisely"><span class="header-section-number">3.1</span> The adjustment factor — what <code>adjustment</code> is, precisely</a></li>
+  <li><a href="#the-look-ahead-question-is-adjustment-safe-for-pit-backtests" id="toc-the-look-ahead-question-is-adjustment-safe-for-pit-backtests" class="nav-link" data-scroll-target="#the-look-ahead-question-is-adjustment-safe-for-pit-backtests"><span class="header-section-number">3.2</span> The look-ahead question — is <code>adjustment</code> safe for PIT backtests?</a></li>
   </ul></li>
   <li><a href="#sf1-fundamentals-columns-and-reporting-dimensions" id="toc-sf1-fundamentals-columns-and-reporting-dimensions" class="nav-link" data-scroll-target="#sf1-fundamentals-columns-and-reporting-dimensions"><span class="header-section-number">4</span> SF1 fundamentals: columns and reporting dimensions</a>
   <ul class="collapse">
@@ -2811,7 +2812,109 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<p><strong>What the adjusted series is, and is not.</strong> <code>adjusted(t2)/adjusted(t1) − 1</code> is the buy-and-hold <strong>total return</strong> from t1 to t2 with dividends reinvested (multiplicatively, at the ex-date price level) and splits “undone” — it is the number to use for returns work on <em>past</em> windows. It is <strong>not</strong> a tradable price history: on the latest day adjusted = as-traded by normalization, and going back it shrinks by every later split and dividend (NVDA’s 1999 adjusted close is $0.38 — nobody traded it at that price). Three honest caveats: (1) the dividend model is multiplicative (<code>1 − d/c</code>), so the factor depends on the price level at each ex-date — a convention, not literal reinvestment; (2) the factor embeds <em>future</em> events (it is normalized to the end of history), so <strong>point-in-time work must use the as-traded series and rebuild adjustments only from events known by date D</strong> — using the stored <code>adjustment</code> in backtests imports look-ahead; (3) a small share of rows carry junk factors (18,073 rows with the vendor’s <code>8.5e18</code> sentinel; ~1.4M rows with <code>adjustment &lt; 0.01</code> or <code>&gt; 100</code>, mostly on zero-volume days) — filter <code>adjustment BETWEEN 0.01 AND 100</code> when using it.</p>
+<p><strong>What the adjusted series is, and is not.</strong> <code>adjusted(t2)/adjusted(t1) − 1</code> is the buy-and-hold <strong>total return</strong> from t1 to t2 with dividends reinvested (multiplicatively, at the ex-date price level) and splits “undone” — it is the number to use for returns work on <em>past</em> windows. It is <strong>not</strong> a tradable price history: on the latest day adjusted = as-traded by normalization, and going back it shrinks by every later split and dividend (NVDA’s 1999 adjusted close is $0.38 — nobody traded it at that price). Three honest caveats: (1) the dividend model is multiplicative (<code>1 − d/c</code>), so the factor depends on the price level at each ex-date — a convention, not literal reinvestment; (2) the factor embeds <em>future</em> events (it is normalized to the end of history) — exactly which uses that bites, and the one-line fix, are dissected in the next subsection; (3) a small share of rows carry junk factors (18,073 rows with the vendor’s <code>8.5e18</code> sentinel; ~1.4M rows with <code>adjustment &lt; 0.01</code> or <code>&gt; 100</code>, mostly on zero-volume days) — filter <code>adjustment BETWEEN 0.01 AND 100</code> when using it.</p>
+</section>
+<section id="the-look-ahead-question-is-adjustment-safe-for-pit-backtests" class="level2" data-number="3.2">
+<h2 data-number="3.2" class="anchored" data-anchor-id="the-look-ahead-question-is-adjustment-safe-for-pit-backtests"><span class="header-section-number">3.2</span> The look-ahead question — is <code>adjustment</code> safe for PIT backtests?</h2>
+<p>This is the subsection that matters most if you trade on this data. The “embeds future events” warning is precise in a way that admits an exact remedy — here is the whole argument, slowly, then the fix.</p>
+<p><strong>Step 1 — where the future lives.</strong> Restate the construction: <code>adjustment(t)</code> is the product of the factors of <em>every</em> corporate action after <code>t</code>, anchored so the latest quote has factor 1.0. So the factor on a 2021 date <em>contains</em> the 2024 split:</p>
+<pre><code>adjustment(NVDA, 2021-07-19) = 0.024915
+   =  (dividend factors 2021→2026) × [10:1 split 2024] × [4:1 split 2021]</code></pre>
+<p>Nothing about that is wrong for <em>returns</em> — the chain is exactly what makes a long-horizon adjusted return equal the total return. But the <strong>level</strong> (literal adjusted price) at <code>t</code> was set partly by events that nobody knew on date <code>t</code>. A strategy deciding on date <code>D</code> may only use facts known by <code>D</code>; the stored level at <code>t &lt; D</code> uses facts from after <code>D</code>. That is the look-ahead.</p>
+<p><strong>Step 2 — what actually cancels.</strong> Take the true as-of-<code>D</code> factor (events known by <code>D</code> only):</p>
+<pre><code>A(t; D) = product of factors of events E with  t &lt; E ≤ D      (known by D)
+adj(t)  = product of factors of events E with  E &gt; t          (stored)</code></pre>
+<p>Both include the same events in <code>(t, D]</code>. They differ only in events after <code>D</code> — and that difference is <em>one number for every t ≤ D</em>:</p>
+<pre><code>adj(t) = A(t; D) × adj(D)                       ← the key identity</code></pre>
+<p>Because the chains telescope, the unknown tail <code>Π_{E &gt; D} factor(E)</code> is exactly the factor stored at the as-of date itself. Consequently:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>use of <code>adjustment</code></th>
+<th>PIT-safe?</th>
+<th>remedy</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>daily / multi-day <strong>returns</strong> (<code>adj(t2)/adj(t1) − 1</code>)</td>
+<td>✅ already safe — future factors cancel in the ratio; only events <em>inside</em> the window contribute</td>
+<td>none</td>
+</tr>
+<tr class="even">
+<td>momentum / ratio signals between two past dates</td>
+<td>✅ same reason</td>
+<td>none</td>
+</tr>
+<tr class="odd">
+<td><strong>level</strong> of a total-return series as of decision date <code>D</code></td>
+<td>⚠️ scale includes events after <code>D</code></td>
+<td>rebase: <code>close(t) × adj(t) / adj(D)</code></td>
+</tr>
+<tr class="even">
+<td>absolute <strong>$ thresholds</strong> on an adjusted level (e.g. “adjusted price &lt; $5”)</td>
+<td>❌ never meaningful — the scale is total-return, not a price</td>
+<td>use as-traded <code>close</code> (as <code>universe_pit</code> does)</td>
+</tr>
+<tr class="odd">
+<td>cross-stock comparison of adjusted levels</td>
+<td>❌ levels are per-stock arbitrary scales</td>
+<td>compare returns, never levels</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Step 3 — the fix is one division, not a rebuild.</strong> All the as-of-<code>D</code> information is already in the stored column. The point-in-time-correct total-return level at <code>t</code>, using only events known by <code>D</code>, is:</p>
+<pre><code>adjusted-PIT(t; D) = close(t) × adjustment(t) / adjustment(D)</code></pre>
+<p>At <code>t = D</code> this equals the as-traded close by construction; at <code>t &lt; D</code> it folds in exactly the splits and dividends inside <code>(t, D]</code> and nothing after. The report’s accessor <code>universe.adjusted_prices(..., asof=D)</code> does this for you (and tests pin the behaviour; 88 green). If you read SQL directly, rebase with <code>adjustment / (SELECT adjustment FROM prices WHERE ticker=? AND date&lt;=? ORDER BY date DESC LIMIT 1)</code>.</p>
+<div id="cell-pit_adjust_verify" class="cell" data-execution_count="11">
+<div id="pit_adjust_verify" class="cell-output cell-output-display" data-execution_count="11">
+<div>
+
+
+<table class="dataframe caption-top table table-sm table-striped small" data-border="1">
+<thead>
+<tr class="header">
+<th data-quarto-table-cell-role="th"></th>
+<th data-quarto-table-cell-role="th">date</th>
+<th data-quarto-table-cell-role="th">as-traded</th>
+<th data-quarto-table-cell-role="th">stored adjusted level</th>
+<th data-quarto-table-cell-role="th">PIT level as of 2021-07-19</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<th data-quarto-table-cell-role="th">0</th>
+<td>2020-12-03</td>
+<td>535.84</td>
+<td>13.34</td>
+<td>535.54</td>
+</tr>
+<tr class="even">
+<th data-quarto-table-cell-role="th">1</th>
+<td>2021-07-19</td>
+<td>751.19</td>
+<td>18.72</td>
+<td>751.19</td>
+</tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</div>
+<p>Read the second table left to right for NVDA with decision date 2021-07-19 (the 4:1 split happens <em>that day</em>, the 10:1 split is two years in the future): the <strong>stored</strong> adjusted level at 2020-12-03 ($13.34) is scaled by the 2024 split the strategy could not know; the <strong>PIT</strong> level (close × adj ÷ adj(D), $535.54) folds in only the events up to the decision date — and at the decision date itself the PIT level equals the as-traded price ($751.19), which is the correct, tradable, no- look-ahead anchor. The deviation table shows the identity holds to vendor precision (≤ ~3e-4 over a 5-year window).</p>
+<p><strong>Step 4 — what we actually do in the PIT backtests.</strong> Three rules, no exceptions:</p>
+<ol type="1">
+<li><strong>Membership, screens, thresholds</strong> — as-traded <code>close</code>, never adjusted. That is what <code>universe_pit</code> already does (as-traded close ≥ $2, as-traded $volume, quote ≤ 10 calendar days old, per-day “most recent valid quote” pointer — no post-hoc information anywhere in the membership).</li>
+<li><strong>Signals and performance on returns</strong> — use adjusted-close ratios (<code>adjusted_prices</code> without <code>asof</code>, or <code>close × adjustment</code> yourself). They are PIT-correct by the cancellation in Step 2; no rebuild, no backfill, no special handling around splits and dividend ex-dates.</li>
+<li><strong>Anywhere a total-return LEVEL is needed as of a decision date <code>D</code></strong> (charts, TR indices, drawdown series, normalized relative strength) — rebase with <code>adjustment(D)</code>: <code>adjusted_prices(..., asof=D)</code> or the one SQL division above. Never mix levels across different as-of dates, and never compare adjusted levels across stocks.</li>
+</ol>
+<p>The old advice — “rebuild adjustments only from events known by date D” — is still true, but it is now <em>exact and cheap</em>: the rebuild is a division by the factor already stored at <code>D</code>. Nothing in the warehouse needs a new column or a maintenance job for this.</p>
 </section>
 </section>
 <section id="sf1-fundamentals-columns-and-reporting-dimensions" class="level1" data-number="4">
@@ -2875,8 +2978,8 @@ window.Quarto = {
 </tbody>
 </table>
 <p><strong>Practical rules.</strong> Use <strong>AR*</strong> for point-in-time work (backtests, PIT screens) with the row’s <code>date</code> as the as-of availability date — <code>date &lt;= D</code> is a valid point-in-time filter and is exactly what <code>universe_pit</code> does for shares. Use <strong>MR*</strong> for “what do we believe today” snapshots (<code>build-ratios</code> uses the latest <code>MRY</code> row). Restatements create AR-vs-MR splits on the same report period; when a company catches up after a reporting gap, ARQ may hold several filings for one quarter.</p>
-<div id="cell-sf1_dims" class="cell" data-execution_count="11">
-<div id="sf1_dims" class="cell-output cell-output-display" data-execution_count="11">
+<div id="cell-sf1_dims" class="cell" data-execution_count="12">
+<div id="sf1_dims" class="cell-output cell-output-display" data-execution_count="12">
 <div>
 
 
@@ -2944,8 +3047,8 @@ window.Quarto = {
 <section id="indicator-dictionary-summary" class="level2" data-number="4.2">
 <h2 data-number="4.2" class="anchored" data-anchor-id="indicator-dictionary-summary"><span class="header-section-number">4.2</span> Indicator dictionary: summary</h2>
 <p>There are <strong>112 fields</strong> (7 key/date fields + 105 indicators; 29 typed in the <code>sf1</code> table, the rest inside the compressed <code>data</code> blob) grouped into five statement families. The <strong>complete listing, every row shown</strong>, is in the <a href="#appendix--sf1-indicator-dictionary">appendix</a>:</p>
-<div id="cell-sf1_summary" class="cell" data-execution_count="12">
-<div id="sf1_summary" class="cell-output cell-output-display" data-execution_count="12">
+<div id="cell-sf1_summary" class="cell" data-execution_count="13">
+<div id="sf1_summary" class="cell-output cell-output-display" data-execution_count="13">
 <div>
 
 
@@ -2995,12 +3098,12 @@ window.Quarto = {
 </div>
 </div>
 <p><strong>What “in the blob” means.</strong> When the fundamentals zip was loaded we typed 29 frequently-used fields as real SQLite columns and stored the <em>complete vendor row</em> (all 105 indicator fields) as one compressed document in the <code>data</code> column (zlib → JSON). Plain SQL cannot see inside it: application code asks SQLite for the row(s) it needs, then decompresses one blob and reads whichever field it wants:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> json, zlib</span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>blob <span class="op">=</span> conn.execute(</span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;SELECT data FROM sf1 WHERE ticker=? AND dimension=? AND reportperiod=?&quot;</span>,</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>    (<span class="st">&quot;AAPL&quot;</span>, <span class="st">&quot;ARY&quot;</span>, <span class="st">&quot;2025-09-30&quot;</span>)).fetchone()[<span class="dv">0</span>]</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>row  <span class="op">=</span> json.loads(zlib.decompress(blob).decode(<span class="st">&quot;utf-8&quot;</span>))</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>row[<span class="st">&quot;revenue&quot;</span>]   <span class="co"># any of the 105 indicator fields</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> json, zlib</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>blob <span class="op">=</span> conn.execute(</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;SELECT data FROM sf1 WHERE ticker=? AND dimension=? AND reportperiod=?&quot;</span>,</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    (<span class="st">&quot;AAPL&quot;</span>, <span class="st">&quot;ARY&quot;</span>, <span class="st">&quot;2025-09-30&quot;</span>)).fetchone()[<span class="dv">0</span>]</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>row  <span class="op">=</span> json.loads(zlib.decompress(blob).decode(<span class="st">&quot;utf-8&quot;</span>))</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>row[<span class="st">&quot;revenue&quot;</span>]   <span class="co"># any of the 105 indicator fields</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>So “queryable in the blob” means <em>available in every row, at the cost of a decompress step</em> — it is not a SQL filterable column. The 29 typed columns are the most-used fields (revenue, netinc, assets, equity, ncfo, capex, fcf, marketcap, ev, pe, pb, ps, eps, dps, divyield, roe, roa, roic, grossmargin, netmargin, ebitda, shareswa, shareswadil, currentratio, de, price, cashneq, liabilities), and the appendix marks each indicator’s location.</p>
 <p>Notes on semantics (verified from vendor docs + live rows):</p>
 <ul>
@@ -3015,12 +3118,12 @@ window.Quarto = {
 <section id="pit-universe-analysis" class="level1" data-number="5">
 <h1 data-number="5"><span class="header-section-number">5</span> PIT universe analysis</h1>
 <p><code>universe_pit</code> is the locally derived investable universe — one row per (trading day, member) for <strong>7,187 trading days (1998-01-14 → 2026-08-11)</strong>. Algorithm (per ticker, no remote requests): walk its price rows keeping a rolling 20-session dollar-volume window and a pointer to the latest as-reported shares (SF1 ARQ/ARY <code>date ≤ row date</code>); a price row is <em>valid</em> when as-traded close ≥ $2, rolling avg $volume ≥ $5M with ≥ 10 sessions, and PIT mcap = close × shares ≥ $300M. Valid rows merge into runs that extend at most <code>max_quote_age</code> = 10 calendar days past the last fresh quote, then expand onto the global trading calendar.</p>
-<div id="cell-pit_fix" class="cell" data-execution_count="13">
+<div id="cell-pit_fix" class="cell" data-execution_count="14">
 <div id="pit_fix" class="cell-output cell-output-display cell-output-markdown">
 <p><strong>2026-08-12 fix (important).</strong> The original build stored the <em>run-start</em> quote’s price/mcap/dvol for the whole run — a continuously trading name has one run from 1998 to today, so AAPL carried <strong>$19.75 (1998) as its 2026 profile</strong>. Membership dates were correct; the attached profile was not. Rebuilt so each member day carries the <strong>most recent valid quote ≤ that day</strong> (regression-tested; tests/test_db.py). All PIT numbers in this section use the rebuilt table.</p>
 </div>
 </div>
-<div id="cell-fig_pit" class="cell" data-fig-height="3.8" data-fig-width="8.5" data-execution_count="15">
+<div id="cell-fig_pit" class="cell" data-fig-height="3.8" data-fig-width="8.5" data-execution_count="16">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3029,15 +3132,15 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-pit_prose" class="cell" data-execution_count="16">
+<div id="cell-pit_prose" class="cell" data-execution_count="17">
 <div id="pit_prose" class="cell-output cell-output-display cell-output-markdown">
 <p>Membership grows from <strong>776 names (1998-01-14)</strong> to <strong>2,435 (2026-08-11)</strong>; the 2020 crash bottom holds 2,093 members (2020-03-23). The chart’s plateau-and-step shape reflects listing standards (more names pass the $5M-dollar-volume screen over time) rather than definition changes; the full range is re-runnable via <code>build-universe-pit --history</code> with different thresholds.</p>
 </div>
 </div>
 <section id="market-cap-coverage-on-the-latest-day" class="level2" data-number="5.1">
 <h2 data-number="5.1" class="anchored" data-anchor-id="market-cap-coverage-on-the-latest-day"><span class="header-section-number">5.1</span> Market-cap coverage on the latest day</h2>
-<div id="cell-pit_latest" class="cell" data-execution_count="17">
-<div id="pit_latest" class="cell-output cell-output-display" data-execution_count="17">
+<div id="cell-pit_latest" class="cell" data-execution_count="18">
+<div id="pit_latest" class="cell-output cell-output-display" data-execution_count="18">
 <div>
 
 
@@ -3099,7 +3202,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-pit_hist" class="cell" data-fig-height="6.6" data-fig-width="10" data-execution_count="18">
+<div id="cell-pit_hist" class="cell" data-fig-height="6.6" data-fig-width="10" data-execution_count="19">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3108,8 +3211,8 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-pit_thresholds" class="cell" data-execution_count="19">
-<div id="pit_thresholds" class="cell-output cell-output-display" data-execution_count="19">
+<div id="cell-pit_thresholds" class="cell" data-execution_count="20">
+<div id="pit_thresholds" class="cell-output cell-output-display" data-execution_count="20">
 <div>
 
 
@@ -3186,7 +3289,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-reading_it" class="cell" data-execution_count="20">
+<div id="cell-reading_it" class="cell" data-execution_count="21">
 <div id="reading_it" class="cell-output cell-output-display cell-output-markdown">
 <p><strong>Reading it.</strong> The universe is small-cap-heavy by count (the $300M–1B bucket holds <strong>383 members, 15.7% of names</strong>) but mega-cap-dominated by value: the 126 names ≥ $100B (1.4% of members) hold <strong>69.3% of the total member mcap</strong>. Raising the screen to a Russell-1000-style $5B floor keeps <strong>1,135 names</strong>; a $1B floor keeps <strong>2,052</strong>. The default $300M / $5M-dvol cut admits <strong>2,435</strong> of the 21,960 stocks in the master (11.1%) — the screen is liquidity- and data-driven, so small illiquid names and names without current SF1 shares drop out by design.</p>
 </div>
@@ -3194,7 +3297,7 @@ window.Quarto = {
 </section>
 <section id="sector-and-industry-coverage-latest-day" class="level2" data-number="5.2">
 <h2 data-number="5.2" class="anchored" data-anchor-id="sector-and-industry-coverage-latest-day"><span class="header-section-number">5.2</span> Sector and industry coverage (latest day)</h2>
-<div id="cell-pit_sector" class="cell" data-execution_count="21">
+<div id="cell-pit_sector" class="cell" data-execution_count="22">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3203,8 +3306,8 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-pit_industry" class="cell" data-execution_count="22">
-<div id="pit_industry" class="cell-output cell-output-display" data-execution_count="22">
+<div id="cell-pit_industry" class="cell" data-execution_count="23">
+<div id="pit_industry" class="cell-output cell-output-display" data-execution_count="23">
 <div>
 
 
@@ -3296,7 +3399,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-pit_years" class="cell" data-fig-height="6.6" data-fig-width="10" data-execution_count="23">
+<div id="cell-pit_years" class="cell" data-fig-height="6.6" data-fig-width="10" data-execution_count="24">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3305,7 +3408,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-constitution" class="cell" data-execution_count="24">
+<div id="cell-constitution" class="cell" data-execution_count="25">
 <div id="constitution" class="cell-output cell-output-display cell-output-markdown">
 <p><strong>Constitution (rebuilt, 7,187 days).</strong> 1,958 of the 2,435 members on 2026-08-11 are plain Domestic Common Stock (the rest are Primary-class names); no ETF/ADR/preferred/warrant rows ever enter — the gate fails closed, per the positive inclusion-filter design. Exchange mix on the latest day: NYSE 1,253 / NASDAQ 1,158 / other 24.</p>
 </div>
@@ -3315,12 +3418,12 @@ window.Quarto = {
 <section id="stock-tear-sheets" class="level1" data-number="6">
 <h1 data-number="6"><span class="header-section-number">6</span> Stock tear sheets</h1>
 <p>One mega, one mid, one small cap — picked below from the rebuilt universe by market-cap bucket, requiring ≥ 12 years of price history and SF1 annual coverage. Each tear has two stacked figures: <strong>(1)</strong> the as-traded close (the raw price, which <em>gaps at splits</em> — the “steps” in the line) together with the fully adjusted series (<code>close × adjustment</code>, continuous) and the daily <strong>share</strong> volume (as-traded shares traded per day, <em>not</em> dollar volume); <strong>(2)</strong> time series of five key SF1 columns plus the F-score. A split is marked where the adjustment factor jumps (|log082 ratio| &gt; 0.9), so the marker is data-driven, not hard-coded.</p>
-<div id="cell-tear_intro" class="cell" data-execution_count="25">
+<div id="cell-tear_intro" class="cell" data-execution_count="26">
 <div id="tear_intro" class="cell-output cell-output-display cell-output-markdown">
 <p>Picked on 2026-08-11: <strong>NVDA</strong> (mega, 28y history), <strong>LVS</strong> (mid, 22y), <strong>STC</strong> (small, 29y).</p>
 </div>
 </div>
-<div id="tear_mega" class="cell" data-execution_count="27">
+<div id="tear_mega" class="cell" data-execution_count="28">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3551,7 +3654,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="tear_mid" class="cell" data-execution_count="28">
+<div id="tear_mid" class="cell" data-execution_count="29">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -3782,7 +3885,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="tear_small" class="cell" data-execution_count="29">
+<div id="tear_small" class="cell" data-execution_count="30">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -4017,8 +4120,8 @@ window.Quarto = {
 <section id="dead-stock-exhibit-lehman-brothers-lehmq" class="level1" data-number="7">
 <h1 data-number="7"><span class="header-section-number">7</span> Dead-stock exhibit: Lehman Brothers (LEHMQ)</h1>
 <p>Survivorship-free data means delisted names stay in the warehouse with their full history. Here is the exhibit: <strong>LEHMAN BROTHERS HOLDINGS INC</strong> was part of the investable PIT universe for <strong>2,689 trading days</strong> — from the first day of the universe (1998-01-14) to <strong>2008-09-22</strong> — and its price rows run to 2008-10-15 (the delisting date) even at $0.08 with 20-30M shares/day trading in the post-bankruptcy market.</p>
-<div id="cell-lehman_data" class="cell" data-execution_count="30">
-<div id="lehman_data" class="cell-output cell-output-display" data-execution_count="30">
+<div id="cell-lehman_data" class="cell" data-execution_count="31">
+<div id="lehman_data" class="cell-output cell-output-display" data-execution_count="31">
 <div>
 
 
@@ -4067,8 +4170,8 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-lehman_master" class="cell" data-execution_count="31">
-<div id="lehman_master" class="cell-output cell-output-display" data-execution_count="31">
+<div id="cell-lehman_master" class="cell" data-execution_count="32">
+<div id="lehman_master" class="cell-output cell-output-display" data-execution_count="32">
 <div>
 
 
@@ -4132,7 +4235,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="lehman_membership" class="cell" data-execution_count="32">
+<div id="lehman_membership" class="cell" data-execution_count="33">
 <div id="lehman_membership-1" class="cell-output cell-output-display cell-output-markdown">
 <p><strong>Confirmed member of the PIT universe:</strong> 2,689 trading days, 1998-01-14 → 2008-09-22. It was still a member on <strong>2008-09-12</strong> at $3.65 / $2.53B — the Friday before the 2008-09-15 bankruptcy filing — and membership ends 2008-09-22 (the 10-day quote-freshness expiry after NYSE halted trading). It never re-enters: delisted names fall out of the investable set exactly when they cease being investable, while prices, fundamentals, and actions are retained for research.</p>
 </div>
@@ -4140,7 +4243,7 @@ window.Quarto = {
 <p>September 2008 tail: members on every day <strong>through 2008-09-22</strong> (2,689 days in Sept); 2,683 of the 2,689 total member-days fall on or before the last tape Friday.</p>
 </div>
 </div>
-<div id="lehman_figs" class="cell" data-execution_count="33">
+<div id="lehman_figs" class="cell" data-execution_count="34">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -4156,8 +4259,8 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-lehman_actions" class="cell" data-execution_count="34">
-<div id="lehman_actions" class="cell-output cell-output-display" data-execution_count="34">
+<div id="cell-lehman_actions" class="cell" data-execution_count="35">
+<div id="lehman_actions" class="cell-output cell-output-display" data-execution_count="35">
 <div>
 
 
@@ -4213,7 +4316,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-lehman_fscore" class="cell" data-execution_count="35">
+<div id="cell-lehman_fscore" class="cell" data-execution_count="36">
 <div id="lehman_fscore" class="cell-output cell-output-display cell-output-markdown">
 <p>FY2007 (the last full year before the collapse) carries an <strong>F-Score of 0</strong> on the 9-point scale — the weakest possible signal — driven by negative CFO-vs-net-income accruals and deteriorating fundamentals across the board. FY2008 never appears in the as-reported (AR) view: the 10-K was never filed. The quarterly statement mirror runs through 2008-05-31 (51 quarters, 1995–2008).</p>
 </div>
@@ -4222,7 +4325,7 @@ window.Quarto = {
 <section id="gics-classification-coverage" class="level1" data-number="8">
 <h1 data-number="8"><span class="header-section-number">8</span> GICS classification coverage</h1>
 <p><code>classifications</code> carries the stock-universe gate: the eleven GICS labels mapped from Sharadar’s taxonomy. <strong>Coverage is a known gap</strong> — only the iShares-era universe (2,589 names) is classified, not the full 21,960-stock master; <code>securities_master.sector/industry</code> (Sharadar taxonomy) covers every instrument but uses non-GICS labels (e.g. <em>Healthcare</em> vs <em>Health Care</em>). The NOTES.md action item — a live GICS-map coverage check against the whole master — remains open.</p>
-<div id="cell-fig_gics" class="cell" data-fig-height="5.6" data-fig-width="8.5" data-execution_count="36">
+<div id="cell-fig_gics" class="cell" data-fig-height="5.6" data-fig-width="8.5" data-execution_count="37">
 <div class="cell-output cell-output-display">
 <div>
 <figure class="figure">
@@ -4231,7 +4334,7 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-gics_cover" class="cell" data-execution_count="37">
+<div id="cell-gics_cover" class="cell" data-execution_count="38">
 <div id="gics_cover" class="cell-output cell-output-display cell-output-markdown">
 <p>Classified names: <strong>2,589</strong> of <strong>21,960</strong> stocks in the master (<strong>11.8%</strong> coverage). No NULL sectors; the five <em>Cash and/or Derivatives</em> rows are iShares IWV placeholders that carry no GICS sector and are excluded from the stock allowlist by construction.</p>
 </div>
@@ -4239,8 +4342,8 @@ window.Quarto = {
 </section>
 <section id="freshness-data-quality" class="level1" data-number="9">
 <h1 data-number="9"><span class="header-section-number">9</span> Freshness &amp; data quality</h1>
-<div id="cell-quality" class="cell" data-execution_count="38">
-<div id="quality" class="cell-output cell-output-display" data-execution_count="38">
+<div id="cell-quality" class="cell" data-execution_count="39">
+<div id="quality" class="cell-output cell-output-display" data-execution_count="39">
 <div>
 
 
@@ -4289,8 +4392,8 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-adj_extremes" class="cell" data-execution_count="39">
-<div id="adj_extremes" class="cell-output cell-output-display" data-execution_count="39">
+<div id="cell-adj_extremes" class="cell" data-execution_count="40">
+<div id="adj_extremes" class="cell-output cell-output-display" data-execution_count="40">
 <div>
 
 
@@ -4377,8 +4480,8 @@ window.Quarto = {
 </div>
 </div>
 <p><strong>Findings.</strong> (1) <strong>No-trade placeholder rows:</strong> 5.5% of price rows carry <code>volume = 0</code> with a positive close; ~301k of them carry the <strong>8.5×100b9078 overflow sentinel</strong> in <code>adjustment</code> (Sharadar did not populate <code>closeadj</code> for the row). (2) <strong>The adjustment tail is mostly mechanical:</strong> even among traded rows ~1.8% have <code>adjustment &gt; 100</code> (cumulative split+dividend rescale of long histories). As-traded <code>close</code> is unaffected, so <strong>returns/factor work should use <code>close</code> directly</strong>, applying <code>adjustment</code> only for total-return series, screening <code>volume = 0</code> and <code>adjustment</code> outliers. (3) Two rows with <code>close ≤ 0</code> exist (cleanup candidate).</p>
-<div id="cell-freshness" class="cell" data-execution_count="40">
-<div id="freshness" class="cell-output cell-output-display" data-execution_count="40">
+<div id="cell-freshness" class="cell" data-execution_count="41">
+<div id="freshness" class="cell-output cell-output-display" data-execution_count="41">
 <div>
 
 
@@ -4410,8 +4513,8 @@ window.Quarto = {
 </div>
 </div>
 </div>
-<div id="cell-snaps" class="cell" data-execution_count="41">
-<div id="snaps" class="cell-output cell-output-display" data-execution_count="41">
+<div id="cell-snaps" class="cell" data-execution_count="42">
+<div id="snaps" class="cell-output cell-output-display" data-execution_count="42">
 <div>
 
 
@@ -4489,11 +4592,11 @@ window.Quarto = {
 <section id="plain-sql-read-only" class="level2" data-number="10.2">
 <h2 data-number="10.2" class="anchored" data-anchor-id="plain-sql-read-only"><span class="header-section-number">10.2</span> Plain SQL (read-only)</h2>
 <p>Outside this repo, prefer the read-only URI so nothing can ever be written:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> sqlite3, pathlib</span>
-<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>conn <span class="op">=</span> sqlite3.<span class="ex">connect</span>(</span>
-<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="ss">f&quot;file:</span><span class="sc">{</span>pathlib<span class="sc">.</span>Path<span class="sc">.</span>home()<span class="sc">}</span><span class="ss">/.prime/agent/data_manager.db?mode=ro&quot;</span>,</span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    uri<span class="op">=</span><span class="va">True</span>)</span>
-<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>conn.execute(<span class="st">&quot;PRAGMA cache_size=-65536&quot;</span>)<span class="op">;</span> conn.execute(<span class="st">&quot;PRAGMA mmap_size=134217728&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="sourceCode python code-with-copy"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> sqlite3, pathlib</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>conn <span class="op">=</span> sqlite3.<span class="ex">connect</span>(</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="ss">f&quot;file:</span><span class="sc">{</span>pathlib<span class="sc">.</span>Path<span class="sc">.</span>home()<span class="sc">}</span><span class="ss">/.prime/agent/data_manager.db?mode=ro&quot;</span>,</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    uri<span class="op">=</span><span class="va">True</span>)</span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>conn.execute(<span class="st">&quot;PRAGMA cache_size=-65536&quot;</span>)<span class="op">;</span> conn.execute(<span class="st">&quot;PRAGMA mmap_size=134217728&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <table class="caption-top table">
 <colgroup>
 <col style="width: 50%">
@@ -4550,8 +4653,8 @@ window.Quarto = {
 </ol>
 <p><strong>Cadence.</strong> The Sharadar bulk zips refresh daily; a morning <code>bulk-update</code> + <code>optimize-db</code> keeps the warehouse current (worst case a few hundred MB–2 GB of downloads). <code>bulk-fromzero</code> is the full wipe-and-rebuild path (e.g., after a provider or schema change).</p>
 <p><strong>Post-update verification checklist.</strong></p>
-<div id="cell-hygiene_verify" class="cell" data-execution_count="42">
-<div id="hygiene_verify" class="cell-output cell-output-display" data-execution_count="42">
+<div id="cell-hygiene_verify" class="cell" data-execution_count="43">
+<div id="hygiene_verify" class="cell-output cell-output-display" data-execution_count="43">
 <div>
 
 
@@ -4605,7 +4708,7 @@ window.Quarto = {
 <section id="appendix-sf1-indicator-dictionary" class="level1 unnumbered">
 <h1 class="unnumbered">Appendix: SF1 indicator dictionary</h1>
 <p>The complete 112-indicator dictionary, every row shown, grouped by statement family (vendor indicator names). “typed?” = exposed as a column in the <code>sf1</code> table; otherwise it lives inside the compressed <code>data</code> blob.</p>
-<div id="appendix_dict" class="cell" data-execution_count="43">
+<div id="appendix_dict" class="cell" data-execution_count="44">
 <div id="appendix_dict-1" class="cell-output cell-output-display cell-output-markdown">
 <p><strong>Income statement</strong> — 23 indicators</p>
 </div>

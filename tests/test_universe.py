@@ -260,6 +260,33 @@ def test_adjusted_prices_defaults_adjustment_to_one(conn):
     assert r["adjusted_close"] == 10.0
 
 
+def test_adjusted_prices_rebases_to_asof(conn):
+    # 2:1 split on 2026-01-05 (0.5 before, 1.0 after), 10:1 split on
+    # 2026-01-06 (0.1 after): today-anchored factor = 0.1.
+    _insert_price(conn, "AAPL", "2026-01-02", 100.0, 0.5)
+    _insert_price(conn, "AAPL", "2026-01-05", 52.0, 1.0)
+    _insert_price(conn, "AAPL", "2026-01-06", 5.2, 0.1)
+    rows = universe.adjusted_prices("AAPL", asof="2026-01-06", conn=conn)
+    now = universe.adjusted_prices("AAPL", conn=conn)
+    # rebased to the as-of date: that row equals its as-traded price
+    assert rows[2]["adjusted_close"] == 5.2
+    # levels: rebased pre-split row = raw * 0.5 / 0.1 (both splits known by
+    # the as-of date), stored level = raw * 0.5 (anchored to today instead)
+    assert rows[0]["adjusted_close"] == 500.0
+    assert abs(rows[0]["adjusted_close"] - now[0]["adjusted_close"]) > 1e-9
+    # rebase is a pure scale: returns across any two rows are identical
+    def ret(rs, i, j):
+        return rs[j]["adjusted_close"] / rs[i]["adjusted_close"]
+    assert abs(ret(rows, 0, 2) - ret(now, 0, 2)) < 1e-12
+    assert abs(ret(rows, 1, 2) - ret(now, 1, 2)) < 1e-12
+
+
+def test_adjusted_prices_asof_requires_price_by_that_date(conn):
+    _insert_price(conn, "AAPL", "2026-02-01", 10.0, 1.0)
+    with pytest.raises(ValueError, match="no adjustment on or before"):
+        universe.adjusted_prices("AAPL", asof="2026-01-01", conn=conn)
+
+
 def test_adjusted_prices_filters_and_orders(conn):
     for d, c in [("2026-01-01", 1.0), ("2026-01-02", 2.0), ("2026-01-03", 3.0)]:
         _insert_price(conn, "AAPL", d, c, 1.0)

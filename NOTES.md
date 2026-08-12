@@ -330,3 +330,21 @@ correct order / no deletes at all).
 - New report §3 subsection "The adjustment factor — what `adjustment` is,
   precisely" + fig_split_demo (NVDA 2024 split: raw gap vs continuous
   adjusted).
+
+## PIT look-ahead in adjustment: identity + one-line fix (2026-08-12; §3)
+
+- Verified identity: stored adjustment(t) = A(t;D) × adjustment(D) for all
+  t ≤ D, where A(t;D) = chain of events known by D only. The "rebuild
+  adjustments as of D" advice reduces to one division (the unknown future
+  tail equals the factor stored at D itself). Verified on NVDA/AAPL to
+  vendor precision (≤ ~3e-4 over 5y windows).
+- Returns (adjusted-close ratios) are already PIT-safe — future factors
+  cancel in ratios; only events inside the window contribute.
+- Levels as of D: rebase = close(t)×adj(t)/adj(D). Implemented as
+  `adjusted_prices(..., asof=D)` (universe.py) + 2 tests
+  (test_adjusted_prices_rebases_to_asof, _asof_requires_price_by_that_date);
+  suite now 88 green.
+- Report §3 new subsection "The look-ahead question" with step-by-step
+  proof, consequences table, live identity verification, NVDA as-of-2021
+  demo ($13.34 stored vs $535.54 PIT level), and the 3 backtest rules
+  (screens → as-traded; returns → stored adjusted; levels → rebase).

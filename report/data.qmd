@@ -336,13 +336,145 @@ dividend (NVDA's 1999 adjusted close is \$0.38 — nobody traded it at that
 price). Three honest caveats: (1) the dividend model is multiplicative
 (`1 − d/c`), so the factor depends on the price level at each ex-date — a
 convention, not literal reinvestment; (2) the factor embeds *future* events
-(it is normalized to the end of history), so **point-in-time work must use
-the as-traded series and rebuild adjustments only from events known by
-date D** — using the stored `adjustment` in backtests imports look-ahead;
+(it is normalized to the end of history) — exactly which uses that bites,
+and the one-line fix, are dissected in the next subsection;
 (3) a small share of rows carry junk factors (18,073 rows with the vendor's
 `8.5e18` sentinel; ~1.4M rows with `adjustment < 0.01` or `> 100`, mostly
 on zero-volume days) — filter `adjustment BETWEEN 0.01 AND 100` when using
 it.
+
+## The look-ahead question — is `adjustment` safe for PIT backtests?
+
+This is the subsection that matters most if you trade on this data. The
+"embeds future events" warning is precise in a way that admits an exact
+remedy — here is the whole argument, slowly, then the fix.
+
+**Step 1 — where the future lives.** Restate the construction:
+`adjustment(t)` is the product of the factors of *every* corporate action
+after `t`, anchored so the latest quote has factor 1.0. So the factor on a
+2021 date *contains* the 2024 split:
+
+```
+adjustment(NVDA, 2021-07-19) = 0.024915
+   =  (dividend factors 2021→2026) × [10:1 split 2024] × [4:1 split 2021]
+```
+
+Nothing about that is wrong for *returns* — the chain is exactly what makes
+a long-horizon adjusted return equal the total return. But the **level**
+(literal adjusted price) at `t` was set partly by events that nobody knew
+on date `t`. A strategy deciding on date `D` may only use facts known by
+`D`; the stored level at `t < D` uses facts from after `D`. That is the
+look-ahead.
+
+**Step 2 — what actually cancels.** Take the true as-of-`D` factor (events
+known by `D` only):
+
+```
+A(t; D) = product of factors of events E with  t < E ≤ D      (known by D)
+adj(t)  = product of factors of events E with  E > t          (stored)
+```
+
+Both include the same events in `(t, D]`. They differ only in events after
+`D` — and that difference is *one number for every t ≤ D*:
+
+```
+adj(t) = A(t; D) × adj(D)                       ← the key identity
+```
+
+Because the chains telescope, the unknown tail `Π_{E > D} factor(E)` is
+exactly the factor stored at the as-of date itself. Consequently:
+
+| use of `adjustment` | PIT-safe? | remedy |
+|---|---|---|
+| daily / multi-day **returns** (`adj(t2)/adj(t1) − 1`) | ✅ already safe — future factors cancel in the ratio; only events *inside* the window contribute | none |
+| momentum / ratio signals between two past dates | ✅ same reason | none |
+| **level** of a total-return series as of decision date `D` | ⚠️ scale includes events after `D` | rebase: `close(t) × adj(t) / adj(D)` |
+| absolute **$ thresholds** on an adjusted level (e.g. "adjusted price < $5") | ❌ never meaningful — the scale is total-return, not a price | use as-traded `close` (as `universe_pit` does) |
+| cross-stock comparison of adjusted levels | ❌ levels are per-stock arbitrary scales | compare returns, never levels |
+
+**Step 3 — the fix is one division, not a rebuild.** All the as-of-`D`
+information is already in the stored column. The point-in-time-correct
+total-return level at `t`, using only events known by `D`, is:
+
+```
+adjusted-PIT(t; D) = close(t) × adjustment(t) / adjustment(D)
+```
+
+At `t = D` this equals the as-traded close by construction; at `t < D` it
+folds in exactly the splits and dividends inside `(t, D]` and nothing
+after. The report's accessor `universe.adjusted_prices(..., asof=D)` does
+this for you (and tests pin the behaviour; 88 green). If you read SQL
+directly, rebase with `adjustment / (SELECT adjustment FROM prices WHERE
+ticker=? AND date<=? ORDER BY date DESC LIMIT 1)`.
+
+```{python}
+#| label: pit_adjust_verify
+def _chain_dev(ticker, D, since="2019-01-01"):
+    """Max relative deviation of the identity adj(t) == A(t;D) * adj(D)."""
+    px = q("SELECT date, adjustment FROM prices WHERE ticker=? AND date>=? AND date<=? ORDER BY date",
+           (ticker, since, D))
+    ev = q("SELECT date FROM corporate_actions WHERE ticker=? AND action IN ('split','dividend') AND date>=? AND date<=?",
+           (ticker, since, D))
+    m = px.merge(ev, on="date", how="left")
+    m["adj_prev"] = m.adjustment.shift(1)
+    f = m.adj_prev / m.adjustment
+    f_at = {r["date"]: r["f"] for r in m.assign(f=f).to_dict("records") if r["date"] in set(ev.date) and np.isfinite(r["f"])}
+    A = {}
+    acc = 1.0
+    for r in reversed(px.sort_values("date").to_dict("records")):
+        A[r["date"]] = acc
+        if r["date"] in f_at:
+            acc *= f_at[r["date"]]
+    st = px.set_index("date").adjustment
+    dev = ((st / pd.Series(A)) / st.iloc[-1] - 1).abs().max()
+    return dev
+
+rows = []
+for tk, D in [("NVDA", "2021-07-19"), ("NVDA", "2024-06-07"), ("NVDA", "2026-08-11"),
+              ("AAPL", "2020-08-28"), ("AAPL", "2026-08-11")]:
+    rows.append((tk, D, f"{_chain_dev(tk, D):.2e}"))
+pd.DataFrame(rows, columns=["ticker", "as-of date D", "max rel dev of the identity (‖0 = exact within vendor precision)"])
+
+nvv = q("SELECT date, close, adjustment FROM prices WHERE ticker='NVDA' AND date IN ('2020-12-03','2021-07-19')")
+adj_D = q("SELECT adjustment FROM prices WHERE ticker='NVDA' AND date='2021-07-19'").adjustment.iloc[0]
+nvv = nvv[nvv.date <= "2021-07-19"].copy()          # the PIT identity is only defined for t <= D
+nvv["as-traded"] = nvv.close
+nvv["stored adjusted level"] = nvv.close * nvv.adjustment
+nvv["PIT level as of 2021-07-19"] = nvv.close * nvv.adjustment / adj_D
+nvv[["date", "as-traded", "stored adjusted level", "PIT level as of 2021-07-19"]].round(2)
+```
+
+Read the second table left to right for NVDA with decision date
+2021-07-19 (the 4:1 split happens *that day*, the 10:1 split is two years
+in the future): the **stored** adjusted level at 2020-12-03
+(\$13.34) is scaled by the 2024 split the strategy could not know; the
+**PIT** level (close × adj ÷ adj(D), \$535.54) folds in only the events up
+to the decision date — and at the decision date itself the PIT level equals
+the as-traded price (\$751.19), which is the correct, tradable, no-
+look-ahead anchor. The deviation table shows the identity holds to vendor
+precision (≤ ~3e-4 over a 5-year window).
+
+**Step 4 — what we actually do in the PIT backtests.** Three rules, no
+exceptions:
+
+1. **Membership, screens, thresholds** — as-traded `close`, never adjusted.
+   That is what `universe_pit` already does (as-traded close ≥ \$2, as-traded
+   \$volume, quote ≤ 10 calendar days old, per-day "most recent valid quote"
+   pointer — no post-hoc information anywhere in the membership).
+2. **Signals and performance on returns** — use adjusted-close ratios
+   (`adjusted_prices` without `asof`, or `close × adjustment` yourself).
+   They are PIT-correct by the cancellation in Step 2; no rebuild, no
+   backfill, no special handling around splits and dividend ex-dates.
+3. **Anywhere a total-return LEVEL is needed as of a decision date `D`**
+   (charts, TR indices, drawdown series, normalized relative strength) —
+   rebase with `adjustment(D)`: `adjusted_prices(..., asof=D)` or the one
+   SQL division above. Never mix levels across different as-of dates, and
+   never compare adjusted levels across stocks.
+
+The old advice — "rebuild adjustments only from events known by date D" —
+is still true, but it is now *exact and cheap*: the rebuild is a division
+by the factor already stored at `D`. Nothing in the warehouse needs a new
+column or a maintenance job for this.
 
 # SF1 fundamentals: columns and reporting dimensions
 
