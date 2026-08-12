@@ -383,3 +383,32 @@ correct order / no deletes at all).
   the 7 derived/ledger tables). Report §2.1 "Column-level data
   dictionary" shows the coverage + a live revenue example.
 - Tests: test_load_descriptions_stores_rows; suite now 89 green.
+## SF1 full-columnar migration — no more `data` blob (2026-08-12)
+
+User push: a storage/update/query project should not rank fields by
+importance. Verified the blob lost on every axis: 76/112 fields invisible
+to SQL; 29 "typed" fields stored TWICE (columns + blob); blob 2.74 GB
+compressed vs ~2.5 GB as native REAL columns (dense rows: 106/112 fields
+populated; SQLite NULL = 1-byte tag).
+
+- db.py: sf1 = all 112 vendor columns (7 TEXT key/date + 105 REAL);
+  column list centralised as db.SF1_INDICATORS (schema built from it).
+  `date` = vendor `datekey` (naming convenience, not importance).
+- bulkload.load_fundamentals + universe.update_sf1_all insert all 112
+  columns (no zlib, no TYPED list). _hydrate_sf1 reimplemented as
+  SELECT * returning vendor-keyed dicts (date surfaced as `datekey`);
+  build_piotroski/quarterly/ratios unchanged.
+- Migrated live DB 2026-08-12 (backup
+  ~/.prime/agent/data_manager.pre-sf1columnar.db, 15.94 GB): dropped old
+  sf1, reloaded from cached fundamentals.csv.zip (3,147,339 rows in ~80s,
+  down from the blob era), rebuilt piotroski (173,132) / quarterly
+  (653,429) / ratios (17,668) / universe_pit (13,459,809 stock-days —
+  identical to pre-migration). optimize-db --quick: 15.94 → 13.66 GB.
+  Invariants re-verified: AAPL 2026-08-11 PIT $304.91 / $4,469B; AAPL rnd/
+  cashneq/opex now SQL-queryable.
+- Tests: test_warehouse sf1 fixture updated (dropped `data` col); suite 89
+  green.
+- Docs updated: AGENTS.md (SF1 section, tables, read-paths, dictionary
+  note), report §4/§5-appendix/§10 + §2/§2.1 wording ("every field is a
+  native column"), docs/data_dictionary.md/.json (sf1 = 112 columns,
+  sf1_blob entry removed).

@@ -49,7 +49,7 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | table | origin | key | contents |
 |---|---|---|---|
 | prices | raw (stocks+funds zips) | (ticker,date) | as-traded OHLCV + `adjustment` |
-| sf1 | raw (fundamentals zip) | (ticker,dimension,reportperiod) | 29 typed cols + full row in `data` blob |
+| sf1 | raw (fundamentals zip) | (ticker,dimension,reportperiod) | all 112 vendor fields as native columns (7 TEXT + 105 REAL) — no blob |
 | securities_master | raw (tickers zip) | permaticker | instrument roster; `table`=stocks/funds; sector/industry (Sharadar taxonomy) |
 | corporate_actions | raw (actions zip) | (ticker,date,action) | splits, dividends, delisted, tickerchanges, bankruptcyliquidation |
 | metrics | raw (metrics zip) | (ticker,as_of) | snapshot stats (betas, MA, 52w, returns, div yields) |
@@ -77,8 +77,7 @@ WHERE table_name = 'SF1' AND indicator = 'revenue';
 
 - Covers all 7 raw warehouse tables: `securities_master` (TICKERS),
   `corporate_actions` (ACTIONS), `sp500_membership` (SP500), `metrics`
-  (METRICS), `sf1` (SF1 — including the 76 fields stored inside
-  `sf1.data`), `prices` (SEP/SFP bulk price columns), plus the vendor's
+  (METRICS), `sf1` (SF1 — all 112 fields stored as native columns), `prices` (SEP/SFP bulk price columns), plus the vendor's
   meta catalogs `TABLE-DESCRIPTIONS` and `ACTIONTYPES`.
 - The 7 derived/ledger tables (`fundamentals`, `quarterly_statements`,
   `ratios`, `universe_pit`, `classifications`, `universe`, `snapshots`)
@@ -151,30 +150,25 @@ WHERE table_name = 'SF1' AND indicator = 'revenue';
 * Inner joins vs master: `securities_master.table` splits stocks (21,960)
   vs funds (9,782); funds are reference series only.
 
-## SF1: dimensions, dates, the blob
+## SF1: dimensions, dates, and the full column set
 
 * Dimensions: `AR*` = **As-Reported** (no restatements; `date` ≈ SEC filing
   date → use `date <= D` for point-in-time), `MR*` = **Most-Recent
   Reported** (includes restatements, indexed to report period). Suffix
   `Y` annual, `Q` quarterly, `T` TTM. All six dims exist on the bulk file
   (ART/MRT too — the API serves none).
-* Row fields: `date` = date key (as-of); `calendardate` = period calendar
-  date; `reportperiod` = fiscal period end; `fiscalperiod` = e.g. `2025-FY`.
-* **`data` blob**: the full vendor row (105 indicator fields beyond the
-  metadata) was stored compressed. Plain SQL cannot see inside it:
-  ```python
-  import json, zlib
-  blob = conn.execute(
-      "SELECT data FROM sf1 WHERE ticker=? AND dimension=? AND reportperiod=?",
-      ("AAPL", "ARY", "2025-09-30")).fetchone()[0]
-  row = json.loads(zlib.decompress(blob).decode("utf-8"))
-  row["revenue"]   # any of the 105 fields
-  ```
-  The 29 typed columns mirror the most-used fields (revenue, netinc, assets,
-  equity, ncfo, capex, fcf, marketcap, ev, pe, pb, ps, eps, dps, divyield,
-  roe, roa, roic, grossmargin, netmargin, ebitda, shareswa, shareswadil,
-  currentratio, de, price, cashneq, liabilities). `_hydrate_sf1(conn,
-  ticker, dimension)` does the decompress loop privately.
+* Row fields: `date` = date key (as-of; vendor name `datekey`); `calendardate`
+  = period calendar date; `reportperiod` = fiscal period end; `fiscalperiod`
+  = e.g. `2025-FY`; `lastupdated` = vendor refresh timestamp.
+* **ALL 112 vendor fields are native columns** (7 key/date TEXT + 105 REAL
+  indicators; no blob, no decompression — since the 2026-08-12 migration).
+  Any indicator is SQL-queryable: `SELECT revenue, rnd, opex FROM sf1
+  WHERE ticker=? AND dimension='ARY' AND date <= ?`. The column list is
+  `db.SF1_INDICATORS` (also docs/data_dictionary.md). `_hydrate_sf1(conn,
+  ticker, dimension)` returns full rows as vendor-keyed dicts (surfacing
+  `date` as `datekey` for caller compatibility). Do NOT re-introduce a
+  blob/lite-column split — this is a storage/query project: serve the
+  vendor schema as-is.
 * PIT market cap: `close × shareswa` (ARQ/ARY ≤ date). Banks' `grossmargin`
   ≈ 1.0 and `fcf` structurally negative — expected artifacts.
 
@@ -242,6 +236,6 @@ of members across all days without the as_of predicate.
 | cross-section on date D | `SELECT * FROM prices WHERE date=?` (uses `idx_prices_date`) |
 | PIT shares/mcap for (t,D) | `SELECT shareswa FROM sf1 WHERE ticker=? AND dimension IN ('ARQ','ARY') AND date<=? ORDER BY date DESC LIMIT 1` |
 | investable members on D | `SELECT * FROM universe_pit WHERE as_of=?` (uses `idx_pit_asof`) |
-| fundamentals history | `SELECT * FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod` (+ `data` blob for untyped fields) |
+| fundamentals history | `SELECT * FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod` (all 112 fields native columns) |
 | delisting evidence | `corporate_actions` rows `action IN ('delisted','bankruptcyliquidation')` |
 | column definition / unit | `SELECT title, description FROM descriptions WHERE table_name=? AND indicator=?` — see the **"data dictionary is IN the database"** section above; derived-table columns: `docs/data_dictionary.md` |

@@ -68,8 +68,8 @@ def test_build_universe_pit_filters(conn):
                          (t, f"2026-07-{i+1:02d}", px, vol))
     # shares for mcap
     for t in ["GOOD", "BAD", "LOWDV"]:
-        conn.execute("INSERT INTO sf1 (ticker, dimension, date, reportperiod, shareswa, data) "
-                     "VALUES (?, 'ARY', '2025-12-31', '2025-FY', 100000000, '{}')", (t,))
+        conn.execute("INSERT INTO sf1 (ticker, dimension, date, reportperiod, shareswa) "
+                     "VALUES (?, 'ARY', '2025-12-31', '2025-FY', 100000000)", (t,))
     conn.commit()
     n = build_universe_pit(conn, as_of="2026-08-10", min_price=2.0, min_mcap=100_000_000.0,
                            min_dvol=1_000_000.0, lookback=20, min_dvol_days=10,

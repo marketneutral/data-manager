@@ -150,26 +150,26 @@ def load_descriptions(path, conn, commit_every=5000):
     return n
 
 
-def load_fundamentals(path, conn):
-    TYPED = ["revenue","netinc","netinccmn","assets","liabilities","equity","cashneq","ncfo",
-             "capex","fcf","marketcap","ev","pe","pb","ps","price","eps","dps","divyield",
-             "roe","roa","roic","grossmargin","netmargin","ebitda","shareswa","shareswadil",
-             "currentratio","de"]
+def load_fundamentals(path, conn, commit_every=100000):
+    """Load the full SF1 mirror: ALL 112 vendor fields as native columns
+    (no blob). `date` = vendor `datekey`; the 105 indicators are REAL."""
+    from .db import SF1_INDICATORS
+    cols = ",".join(SF1_INDICATORS)
+    marks = ",".join("?" * len(SF1_INDICATORS))
     n = 0; rows = []
     def flush():
         nonlocal rows
-        conn.executemany("INSERT OR REPLACE INTO sf1 (ticker,dimension,date,reportperiod,fiscalperiod,calendardate,lastupdated,"
-                         "revenue,netinc,netinccmn,assets,liabilities,equity,cashneq,ncfo,capex,fcf,marketcap,ev,pe,pb,ps,"
-                         "price,eps,dps,divyield,roe,roa,roic,grossmargin,netmargin,ebitda,shareswa,shareswadil,currentratio,de,data) "
-                         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        conn.executemany(
+            "INSERT OR REPLACE INTO sf1 "
+            "(ticker,dimension,date,reportperiod,fiscalperiod,calendardate,lastupdated,"
+            + cols + ") VALUES (?,?,?,?,?,?,?," + marks + ")", rows)
         rows = []
     for r in stream_csv(path):
-        blob = zlib.compress(json.dumps(r).encode("utf-8"))
-        rows.append((r.get("ticker"), r.get("dimension"), r.get("datekey") or r.get("date"), r.get("reportperiod"),
-                     r.get("fiscalperiod"), r.get("calendardate"), r.get("lastupdated"),
-                     *[num(r.get(c)) for c in TYPED], blob))
+        rows.append((r.get("ticker"), r.get("dimension"), r.get("datekey") or r.get("date"),
+                     r.get("reportperiod"), r.get("fiscalperiod"), r.get("calendardate"),
+                     r.get("lastupdated"), *[num(r.get(c)) for c in SF1_INDICATORS]))
         n += 1
-        if len(rows) >= 100000:
+        if len(rows) >= commit_every:
             flush(); conn.commit()
     flush(); conn.commit()
     return n

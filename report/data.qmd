@@ -168,7 +168,7 @@ raw = pd.DataFrame([
  ["securities_master", "tickers zip (SEP stocks + SFP funds)", "whole Sharadar tickers table; every instrument incl. 19,227 delisted; `table` column marks the source zip (stocks=21,960 / funds=9,782)"],
  ["corporate_actions", "actions zip", "splits, dividends, listed, delisted, ticker changes, spinoffs, bankruptcies (672k rows; 14× the API's 47k)"],
  ["metrics", "metrics zip", "latest + multi-date snapshot metrics: price, betas (1y/5y), MA50/200, 52w hi/lo, returns 1y/5y/YTD, volumes, dividend yields"],
- ["sf1", "fundamentals zip", "112 fields × 6 reporting dimensions (ARQ/ARY/ART/MRQ/MRY/MRT); 29 columns exposed typed, the full row kept compressed in `data`; §5 + appendix is the reference"],
+ ["sf1", "fundamentals zip", "112 fields × 6 reporting dimensions (ARQ/ARY/ART/MRQ/MRY/MRT); all 112 fields stored as native columns; §5 + appendix is the reference"],
  ["prices", "stocks zip + funds zip", "as-traded OHLCV + total-return factor. Bulk columns are split-adjusted; the loader stores as-traded (close=closeunadj, OHLC × closeunadj/close) and adjustment=closeadj/closeunadj"],
  ["sp500_membership", "Sharadar API (whole table)", "S&P500 membership history 1957 → now with add/drop actions (59.6k rows)"],
 ]).rename(columns={0: "table", 1: "source", 2: "notes"})
@@ -234,7 +234,7 @@ q("""SELECT table_name, indicator, title, substr(description,1,150) AS descripti
 | `corporate_actions` | ACTIONS | `quarterly_statements` (derived) | this repo |
 | `sp500_membership` | SP500 | `ratios` (derived) | this repo |
 | `metrics` | METRICS (19 of 22 stored) | `universe_pit` (derived) | this repo |
-| `sf1` | SF1 (29 typed + 76 in `data` blob) | `classifications`, `universe` | this repo |
+| `sf1` | SF1 (all 112 fields as native columns) | `classifications`, `universe` | this repo |
 | `prices` | SEP/SFP bulk price columns | `snapshots` (ledger) | this repo |
 
 The full column-level dictionary for all 14 tables — vendor definitions
@@ -640,11 +640,13 @@ column or a maintenance job for this.
 
 # SF1 fundamentals: columns and reporting dimensions
 
-The SF1 mirror is the fundamentals backbone. **Every raw row carries 112
-indicator fields**; the table exposes 29 of them as typed columns (plus the
-six key fields) and keeps the full vendor row compressed in the `data` blob
-(`zlib` → JSON), so nothing is lost. Reporting dimensions are the key to
-using the mirror without look-ahead bias.
+The SF1 mirror is the fundamentals backbone. **Every raw row carries all
+112 vendor fields — 7 key/date fields + all 105 indicators — stored as
+native SQLite columns** (no blob, no decompression, no "important fields"
+ranking): this is a storage/query project, so the vendor schema is served
+as-is and every field is SQL-queryable (`WHERE`, `ORDER BY`, `GROUP BY` on
+any indicator). Reporting dimensions are the key to using the mirror
+without look-ahead bias.
 
 ## Reporting dimensions: As-Reported vs Most-Recent-Reported
 
@@ -686,8 +688,8 @@ Row-level fields (all rows, all dimensions): `ticker`, `dimension`, `date`
 
 ## Indicator dictionary: summary
 
-There are **112 fields** (7 key/date fields + 105 indicators; 29 typed in the `sf1` table, the rest inside
-the compressed `data` blob) grouped into five statement families. The
+There are **112 fields** (7 key/date fields + 105 indicators, all stored as native columns) grouped
+into five statement families. The
 **complete listing, every row shown**, is in the
 [appendix](#appendix--sf1-indicator-dictionary):
 
@@ -700,28 +702,24 @@ summ.loc[len(summ.index)] = ["total", "112"]
 summ.reset_index(drop=True)
 ```
 
-**What "in the blob" means.** When the fundamentals zip was loaded we typed
-29 frequently-used fields as real SQLite columns and stored the *complete
-vendor row* (all 105 indicator fields) as one compressed document in the
-`data` column (zlib → JSON). Plain SQL cannot see inside it: application
-code asks SQLite for the row(s) it needs, then decompresses one blob and
-reads whichever field it wants:
+**Every field is a native column.** A first version of the loader ranked 29
+"important" fields as columns and parked the other 76 in a compressed JSON
+`data` blob — that turned out to be the wrong call for a storage/query
+project: it encodes an opinion about which fields matter, it makes the
+other 76 fields invisible to SQL, and it is not even smaller on disk
+(blob ≈ 2.7 GB compressed vs ≈ 2.5 GB for the same fields as REAL
+columns; the 29-typed + blob split also stored those 29 fields twice).
+The warehouse now stores **all 112 fields as native columns** (2026-08-12
+migration; DB 15.94 → 13.66 GB). Any indicator is queryable directly:
 
-```python
-import json, zlib
-blob = conn.execute(
-    "SELECT data FROM sf1 WHERE ticker=? AND dimension=? AND reportperiod=?",
-    ("AAPL", "ARY", "2025-09-30")).fetchone()[0]
-row  = json.loads(zlib.decompress(blob).decode("utf-8"))
-row["revenue"]   # any of the 105 indicator fields
+```sql
+SELECT ticker, date, revenue, rnd, opex, cashneq
+FROM   sf1
+WHERE  ticker='AAPL' AND dimension='ARY'
+ORDER  BY reportperiod DESC LIMIT 1;
 ```
 
-So "queryable in the blob" means *available in every row, at the cost of a
-decompress step* — it is not a SQL filterable column. The 29 typed columns
-are the most-used fields (revenue, netinc, assets, equity, ncfo, capex, fcf,
-marketcap, ev, pe, pb, ps, eps, dps, divyield, roe, roa, roic, grossmargin,
-netmargin, ebitda, shareswa, shareswadil, currentratio, de, price, cashneq,
-liabilities), and the appendix marks each indicator's location.
+The appendix below marks every indicator as a column.
 
 Notes on semantics (verified from vendor docs + live rows):
 
@@ -1309,7 +1307,7 @@ canonical guide for downstream consumers — this section is the short form).
 |---|---|
 | `db.connect()` (`data_manager.db`) | a WAL-mode SQLite connection (tuned pragmas, schema ensured) — the normal entry for in-repo jobs |
 | `universe.adjusted_prices(ticker, start=None, end=None)` | per-day dicts `date/open/high/low/close/volume/adjustment` **plus** `adjusted_open/.../adjusted_close` (= raw × adjustment); volume left as traded |
-| `universe._hydrate_sf1(conn, ticker, dimension)` | decompressed full SF1 rows (all 105 fields) as dicts |
+| `universe._hydrate_sf1(conn, ticker, dimension)` | full SF1 rows (all 112 fields, vendor-keyed incl. `datekey`) as dicts — no decompression needed |
 | `universe.master_stocks(conn, isdelisted=None)` | all stock tickers (`table='stocks'`; honors DM_SHARD/DM_SHARDS) |
 | `universe.universe_tickers(conn)` / `etfs.etf_tickers()` | universe / ETF manifest ticker lists |
 | CLI `data-manager status` | live coverage snapshot |
@@ -1335,7 +1333,7 @@ conn.execute("PRAGMA cache_size=-65536"); conn.execute("PRAGMA mmap_size=1342177
 | cross-section on date D | `SELECT * FROM prices WHERE date=?` (uses `idx_prices_date`) |
 | PIT shares / mcap | `SELECT shareswa FROM sf1 WHERE ticker=? AND dimension IN ('ARQ','ARY') AND date<=? ORDER BY date DESC LIMIT 1` |
 | investable members on D | `SELECT * FROM universe_pit WHERE as_of=?` (uses `idx_pit_asof`) |
-| fundamentals history | `SELECT * FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod` (+ `data` blob for untyped fields) |
+| fundamentals history | `SELECT * FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod` (all 112 fields are native columns) |
 | delisting evidence | `corporate_actions` rows with `action IN ('delisted','bankruptcyliquidation')` |
 
 ## Gotchas (condensed)
@@ -1393,15 +1391,14 @@ in `db.connect()` (idempotent), and the full rebuild path
 # Appendix: SF1 indicator dictionary {.unnumbered}
 
 The complete 112-indicator dictionary, every row shown, grouped by statement
-family (vendor indicator names). "typed?" = exposed as a column in the `sf1`
-table; otherwise it lives inside the compressed `data` blob.
+family (vendor indicator names). "column" = a native SQLite column — all
+112 fields (7 key/date + 105 indicators) are stored as columns in `sf1`.
 
 ```{python}
 #| label: appendix_dict
 for g in SF1_GROUPS:
     display(Markdown(f"**{g['group']}** — {len(g['rows'])} indicators"))
-    rows = [(code, name, "yes" if code in SF1_EXPOSED else "in blob")
-            for code, name in g["rows"]]
-    d = pd.DataFrame(rows, columns=["code", "indicator", "typed?"])
+    rows = [(code, name, "column") for code, name in g["rows"]]
+    d = pd.DataFrame(rows, columns=["code", "indicator", "column?"])
     display(d.reset_index(drop=True))
 ```

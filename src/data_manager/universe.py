@@ -508,12 +508,6 @@ def _numf(v):
 
 
 # ---- SF1 full mirror, batched per dimension (ticker=batch supported) ----
-_SF1_TYPED = ["revenue", "netinc", "netinccmn", "assets", "liabilities", "equity",
-              "cashneq", "ncfo", "capex", "fcf", "marketcap", "ev", "pe", "pb",
-              "ps", "price", "eps", "dps", "divyield", "roe", "roa", "roic",
-              "grossmargin", "netmargin", "ebitda", "shareswa", "shareswadil",
-              "currentratio", "de"]
-
 # rough rows-per-ticker estimates per dimension (from live probes)
 _EST = {"ARY": 38, "MRY": 40, "ARQ": 140, "MRQ": 145}
 
@@ -525,39 +519,52 @@ def _sf1_batches(tickers: list[str], dimension: str) -> list[list[str]]:
 
 
 def update_sf1_all(conn=None, dimensions=None, pace: float = 0.15) -> int:
-    """Full SF1 mirror (all dimensions, full history) via batched pulls."""
+    """Full SF1 mirror (all dimensions, full history) via batched pulls.
+
+    All 112 vendor fields are stored as native columns (no blob)."""
     from .providers.sharadar import _fetch
-    import json, zlib
+    from .db import SF1_INDICATORS
     conn = conn or db.connect()
     dims = dimensions or _SF1_DIMS
     total = 0
     tickers = master_stocks(conn)
+    cols = ",".join(SF1_INDICATORS)
+    marks = ",".join("?" * len(SF1_INDICATORS))
+    sql = ("INSERT OR REPLACE INTO sf1 "
+           "(ticker,dimension,date,reportperiod,fiscalperiod,calendardate,lastupdated,"
+           + cols + ") VALUES (?,?,?,?,?,?,?," + marks + ")")
     for dim in dims:
         for batch in _sf1_batches(tickers, dim):
             rows = _fetch("fundamentals", ticker=",".join(batch), dimension=dim)
             if not rows:
                 continue
             for r in rows:
-                blob = zlib.compress(json.dumps(r).encode("utf-8"))
-                conn.execute(
-                    "INSERT OR REPLACE INTO sf1 "
-                    "(ticker, dimension, date, reportperiod, fiscalperiod, calendardate,"
-                    " lastupdated, revenue, netinc, netinccmn, assets, liabilities,"
-                    " equity, cashneq, ncfo, capex, fcf, marketcap, ev, pe, pb, ps,"
-                    " price, eps, dps, divyield, roe, roa, roic, grossmargin,"
-                    " netmargin, ebitda, shareswa, shareswadil, currentratio, de, data)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,"
-                    "?,?,?,?,?,?,?,?,?,?)",
-                    (r.get("ticker"), dim, r.get("date"), r.get("reportperiod"),
-                     r.get("fiscalperiod"), r.get("calendardate"), r.get("lastupdated"),
-                     *[_numf(r.get(c)) for c in _SF1_TYPED], blob))
+                conn.execute(sql,
+                    (r.get("ticker"), dim, r.get("datekey") or r.get("date"),
+                     r.get("reportperiod"), r.get("fiscalperiod"), r.get("calendardate"),
+                     r.get("lastupdated"), *[_numf(r.get(c)) for c in SF1_INDICATORS]))
             total += len(rows)
             conn.commit()
             time.sleep(pace)
     return total
 
 
-# ---- prices for ALL stocks, size-aware batched (ticker=A,B,... supported) ----
+def _hydrate_sf1(conn, ticker: str, dimension: str) -> list[dict]:
+    """Full SF1 rows for (ticker, dimension) as vendor-keyed dicts.
+
+    All 112 fields are native columns now; `date` is surfaced as `datekey`
+    (the vendor name) for caller compatibility."""
+    rows = conn.execute(
+        "SELECT * FROM sf1 WHERE ticker=? AND dimension=? ORDER BY calendardate",
+        (ticker, dimension)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["datekey"] = d.get("date")
+        out.append(d)
+    return out
+
+
 def _price_batches(tickers: list[str], start: str, end: str, conn) -> list[list[str]]:
     """Batch by estimated rows so each response stays under the ~7MB cap."""
     est = {}
@@ -656,16 +663,6 @@ def update_prices_all_stocks(conn=None, start: str = "1996-01-01", end: str = No
 
 
 # ---- local derivations from the sf1 mirror (zero remote requests) ----
-def _hydrate_sf1(conn, ticker: str, dimension: str) -> list[dict]:
-    import json, zlib
-    rows = conn.execute(
-        "SELECT data FROM sf1 WHERE ticker=? AND dimension=? ORDER BY calendardate",
-        (ticker, dimension)).fetchall()
-    out = []
-    for (blob,) in rows:
-        if blob:
-            out.append(json.loads(zlib.decompress(blob).decode("utf-8")))
-    return out
 
 
 def build_piotroski(conn=None) -> int:

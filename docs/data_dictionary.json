@@ -515,10 +515,11 @@
  "sf1": {
   "origin": "RAW (fundamentals zip)",
   "key": "(ticker, dimension, reportperiod)",
+  "notes": "all 112 vendor fields stored as native columns (7 TEXT + 105 REAL); no blob since 2026-08-12; `date` = vendor `datekey`",
   "columns": [
    {
     "name": "ticker",
-    "type": "TEXT/REAL",
+    "type": "TEXT",
     "pk": 1,
     "unit": "text",
     "definition": "Ticker Symbol \u2014 [Entity] The ticker is a unique identifier for a security in the database. Where a company is delisted and the ticker subsequently recycled for use by a different company; we utilise that ticker for the currently active company and append a number to the ticker of the delisted company. The ACTIONS table provides a record of historical ticker changes.",
@@ -526,7 +527,7 @@
    },
    {
     "name": "dimension",
-    "type": "TEXT/REAL",
+    "type": "TEXT",
     "pk": 1,
     "unit": "text",
     "definition": "Dimension \u2014 [Entity] The dimension field allows you to take different dimensional views of data over time. ARQ: Quarterly; excluding restatements; MRQ: Quarterly; including restatements; ARY: annual; excluding restatements; MRY: annual; including restatements; ART: trailing-twelve-months; excluding restatements; MRT: trailing-twelve-months; including restatements.",
@@ -534,15 +535,15 @@
    },
    {
     "name": "date",
-    "type": "TEXT/REAL",
+    "type": "TEXT",
     "pk": 0,
-    "unit": "",
-    "definition": "this repo \u2014 as-of/observation date key for point-in-time lookups (filing date for AR*, report-key date for MR*)",
-    "source": "this repo (local semantics)"
+    "unit": "date (YYYY-MM-DD)",
+    "definition": "Date Key \u2014 [Entity] The Date Key represents the SEC filing date for AR dimensions (ARQ;ART;ARY); and the [REPORTPERIOD] for MR dimensions (MRQ;MRT;MRY). In addition; this is the observation date used for [Price] based data such as [MarketCap]; [Price] and [PE].",
+    "source": "Sharadar `descriptions` table"
    },
    {
     "name": "reportperiod",
-    "type": "TEXT/REAL",
+    "type": "TEXT",
     "pk": 1,
     "unit": "date (YYYY-MM-DD)",
     "definition": "Report Period \u2014 [Entity] The Report Period represents the end date of the fiscal period.",
@@ -550,7 +551,7 @@
    },
    {
     "name": "fiscalperiod",
-    "type": "TEXT/REAL",
+    "type": "TEXT",
     "pk": 0,
     "unit": "date (YYYY-MM-DD)",
     "definition": "Fiscal Period \u2014 The fiscal period of the report expressed as follows: 2024-Q2; 2024-Q3; 2024-FY etc. Note that companies can have different fiscal periods for the report period due to different year end dates.",
@@ -558,7 +559,7 @@
    },
    {
     "name": "calendardate",
-    "type": "TEXT/REAL",
+    "type": "TEXT",
     "pk": 0,
     "unit": "date (YYYY-MM-DD)",
     "definition": "Calendar Date \u2014 [Entity] The Calendar Date represents the normalized [ReportPeriod]. This provides a common date to query for which is necessary due to irregularity in report periods across companies. For example; if the report period is 2015-09-26; the calendar date will be 2015-09-30 for quarterly and trailing-twelve-month dimensions (ARQ;MRQ;ART;MRT); and 2015-12-31 for annual dimensions (ARY;MRY). We also employ offsets in order to maximise comparability of the period across companies. For example consider two companies: one with a quarter ending on 2018-07-24; and the other with a quarter ending on 2018-06-28. A naive normalization process would assign these to differing calendar quarters of 2018-09-30 and 2018-06-30 respectively. However; we assign these both to the 2018-06-30 calendar quarter because this maximises the overlap in the report periods in question and therefore the comparability of this period.",
@@ -566,231 +567,111 @@
    },
    {
     "name": "lastupdated",
-    "type": "TEXT/REAL",
+    "type": "TEXT",
     "pk": 0,
     "unit": "date (YYYY-MM-DD)",
     "definition": "Last Updated Date \u2014 [Entity] Last Updated represents the last date that this database entry was updated; which is useful to users when updating their local records.",
     "source": "Sharadar `descriptions` table"
    },
    {
-    "name": "revenue",
-    "type": "TEXT/REAL",
+    "name": "accoci",
+    "type": "REAL",
     "pk": 0,
     "unit": "currency",
-    "definition": "Revenues \u2014 [Income Statement] The amount of Revenue recognised from goods sold; services rendered; insurance premiums; or other activities that constitute an earning process. Interest income for financial institutions is reported net of interest expense and provision for credit losses. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "netinc",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Net Income \u2014 [Income Statement] The portion of profit or loss for the period; net of income taxes; which is attributable to the parent after the deduction of [NetIncNCI] from [ConsolInc]; and before the deduction of [PrefDivIS].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "netinccmn",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Net Income Common Stock \u2014 [Income Statement] The amount of net income (loss) for the period due to common shareholders. Typically differs from [NetInc] to the parent entity due to the deduction of [PrefDivIS].",
+    "definition": "Accumulated Other Comprehensive Income \u2014 [Balance Sheet] A component of [Equity] representing the accumulated change in equity from transactions and other events and circumstances from non-owner sources; net of tax effect; at period end. Includes foreign currency translation items; certain pension adjustments; unrealized gains and losses on certain investments in debt and equity securities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
     "source": "Sharadar `descriptions` table"
    },
    {
     "name": "assets",
-    "type": "TEXT/REAL",
+    "type": "REAL",
     "pk": 0,
     "unit": "currency",
     "definition": "Total Assets \u2014 [Balance Sheet] Sum of the carrying amounts as of the balance sheet date of all assets that are recognized. Major components are [CashnEq]; [Investments];[Intangibles]; [PPNENet];[TaxAssets] and [Receivables].",
     "source": "Sharadar `descriptions` table"
    },
    {
-    "name": "liabilities",
-    "type": "TEXT/REAL",
+    "name": "assetsavg",
+    "type": "REAL",
     "pk": 0,
     "unit": "currency",
-    "definition": "Total Liabilities \u2014 [Balance Sheet] Sum of the carrying amounts as of the balance sheet date of all liabilities that are recognized. Principal components are [Debt]; [DeferredRev]; [Payables];[Deposits]; and [TaxLiabilities].",
+    "definition": "Average Assets \u2014 [Metrics] Average asset value for the period used in calculation of [ROE] and [ROA]; derived from [Assets].",
     "source": "Sharadar `descriptions` table"
    },
    {
-    "name": "equity",
-    "type": "TEXT/REAL",
+    "name": "assetsc",
+    "type": "REAL",
     "pk": 0,
     "unit": "currency",
-    "definition": "Shareholders Equity Attributable to Parent \u2014 [Balance Sheet] A principal component of the balance sheet; in addition to [Liabilities] and [Assets]; that represents the total of all stockholders' equity (deficit) items; net of receivables from officers; directors; owners; and affiliates of the entity which are attributable to the parent.",
+    "definition": "Current Assets \u2014 [Balance Sheet] The current portion of [Assets]; reported if a company operates a classified balance sheet that segments current and non-current assets.",
     "source": "Sharadar `descriptions` table"
    },
    {
-    "name": "cashneq",
-    "type": "TEXT/REAL",
+    "name": "assetsnc",
+    "type": "REAL",
     "pk": 0,
     "unit": "currency",
-    "definition": "Cash and Equivalents \u2014 [Balance Sheet] A component of [Assets] representing the amount of currency on hand as well as demand deposits with banks or financial institutions. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "definition": "Assets Non-Current \u2014 [Balance Sheet] Amount of non-current assets; for companies that operate a classified balance sheet. Calculated as the different between Total Assets [Assets] and Current Assets [AssetsC].",
     "source": "Sharadar `descriptions` table"
    },
    {
-    "name": "ncfo",
-    "type": "TEXT/REAL",
+    "name": "assetturnover",
+    "type": "REAL",
     "pk": 0,
-    "unit": "currency",
-    "definition": "Net Cash Flow from Operations \u2014 [Cash Flow Statement] A component of [NCF] representing the amount of cash inflow (outflow) from operating activities; from continuing and discontinued operations.",
+    "unit": "ratio",
+    "definition": "Asset Turnover \u2014 [Metrics] Asset turnover is a measure of a firms operating efficiency; calculated by dividing [Revenue] by [AssetsAVG]. Often a component of DuPont ROE analysis.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "bvps",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency/share",
+    "definition": "Book Value per Share \u2014 [Metrics] Measures the ratio between [Equity] and [SharesWA] as adjusted by [ShareFactor].",
     "source": "Sharadar `descriptions` table"
    },
    {
     "name": "capex",
-    "type": "TEXT/REAL",
+    "type": "REAL",
     "pk": 0,
     "unit": "currency",
     "definition": "Capital Expenditure \u2014 [Cash Flow Statement] A component of [NCFI] representing the net cash inflow (outflow) associated with the acquisition & disposal of long-lived; physical & intangible assets that are used in the normal conduct of business to produce goods and services and are not intended for resale. Includes cash inflows/outflows to pay for construction of self-constructed assets & software. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
     "source": "Sharadar `descriptions` table"
    },
    {
-    "name": "fcf",
-    "type": "TEXT/REAL",
+    "name": "cashneq",
+    "type": "REAL",
     "pk": 0,
     "unit": "currency",
-    "definition": "Free Cash Flow \u2014 [Metrics] Free Cash Flow is a measure of financial performance calculated as [NCFO] minus [CapEx].",
+    "definition": "Cash and Equivalents \u2014 [Balance Sheet] A component of [Assets] representing the amount of currency on hand as well as demand deposits with banks or financial institutions. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
     "source": "Sharadar `descriptions` table"
    },
    {
-    "name": "marketcap",
-    "type": "TEXT/REAL",
+    "name": "cashnequsd",
+    "type": "REAL",
     "pk": 0,
     "unit": "USD",
-    "definition": "Market Capitalization \u2014 [Metrics] Represents the product of [SharesBas]; [Price] and [ShareFactor].",
+    "definition": "Cash and Equivalents (USD) \u2014 [Balance Sheet] [CashnEq] in USD; converted by [FXUSD]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
     "source": "Sharadar `descriptions` table"
    },
    {
-    "name": "ev",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "USD",
-    "definition": "Enterprise Value \u2014 [Metrics] Enterprise value is a measure of the value of a business as a whole; calculated as [MarketCap] plus [DebtUSD] minus [CashnEqUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "pe",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Price Earnings (Damodaran Method) \u2014 [Metrics] Measures the ratio between [MarketCap] and [NetIncCmnUSD]",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "pb",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Price to Book Value \u2014 [Metrics] Measures the ratio between [MarketCap] and [EquityUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ps",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Price Sales (Damodaran Method) \u2014 [Metrics] Measures the ratio between [MarketCap] and [RevenueUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "price",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "USD/share",
-    "definition": "Share Price (Adjusted Close) \u2014 [Entity] The price per common share adjusted for stock splits but not adjusted for dividends; used in the computation of [PE1]; [PS1]; [DivYield] and [SPS].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "eps",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "currency/share",
-    "definition": "Earnings per Basic Share \u2014 [Income Statement] Earnings per share as calculated and reported by the company. Approximates to the amount of [NetIncCmn] for the period per each [SharesWA] after adjusting for [ShareFactor].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "dps",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "USD/share",
-    "definition": "Dividends per Basic Common Share \u2014 [Income Statement] Aggregate dividends declared during the period for each split-adjusted share of common stock outstanding. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "divyield",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Dividend Yield \u2014 [Metrics] Dividend Yield measures the ratio between a company's trailing twelve month [DPS] and its close [Price]; by summing dividends by ExDate; provided in the SHARADAR/ACTIONS table; in the twelve months leading up to the date in the [DateKey] indicator.  Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "roe",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Return on Average Equity \u2014 [Metrics] Return on equity measures a corporation's profitability by calculating the amount of [NetIncCmn] returned as a percentage of [EquityAvg].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "roa",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Return on Average Assets \u2014 [Metrics] Return on assets measures how profitable a company is [NetIncCmn] relative to its total assets [AssetsAvg].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "roic",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Return on Invested Capital \u2014 [Metrics] Return on Invested Capital is a ratio estimated by dividing [EBIT] by [InvCapAvg]. [InvCap] is calculated as: [Debt] plus [Assets] minus [Intangibles] minus [CashnEq] minus [LiabilitiesC]. Please note this calculation method is subject to change.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "grossmargin",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Gross Margin \u2014 [Metrics] Gross Margin measures the ratio between a company's [GP] and [Revenue].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "netmargin",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Profit Margin \u2014 [Metrics] Measures the ratio between a company's [NetIncCmn] and [Revenue].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ebitda",
-    "type": "TEXT/REAL",
+    "name": "cor",
+    "type": "REAL",
     "pk": 0,
     "unit": "currency",
-    "definition": "Earnings Before Interest Taxes & Depreciation Amortization (EBITDA) \u2014 [Metrics] EBITDA is a non-GAAP accounting metric that is widely used when assessing the performance of companies; calculated by adding [DepAmor] back to [EBIT].",
+    "definition": "Cost of Revenue \u2014 [Income Statement] The aggregate cost of goods produced and sold and services rendered during the reporting period. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
     "source": "Sharadar `descriptions` table"
    },
    {
-    "name": "shareswa",
-    "type": "TEXT/REAL",
+    "name": "consolinc",
+    "type": "REAL",
     "pk": 0,
-    "unit": "units",
-    "definition": "Weighted Average Shares \u2014 [Income Statement] The weighted average number of shares or units issued and outstanding that are used by the company to calculate [EPS]; determined based on the timing of issuance of shares or units in the period.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "shareswadil",
-    "type": "TEXT/REAL",
-    "pk": 0,
-    "unit": "units",
-    "definition": "Weighted Average Shares Diluted \u2014 [Income Statement] The weighted average number of shares or units issued and outstanding that are used by the company to calculate [EPSDil]; determined based on the timing of issuance of shares or units in the period.",
+    "unit": "currency",
+    "definition": "Consolidated Income \u2014 [Income Statement] The portion of profit or loss for the period; net of income taxes; which is attributable to the consolidated entity; before the deduction of [NetIncNCI].",
     "source": "Sharadar `descriptions` table"
    },
    {
     "name": "currentratio",
-    "type": "TEXT/REAL",
+    "type": "REAL",
     "pk": 0,
     "unit": "ratio",
     "definition": "Current Ratio \u2014 [Metrics] The ratio between [AssetsC] and [LiabilitiesC]; for companies that operate a classified balance sheet.",
@@ -798,19 +679,739 @@
    },
    {
     "name": "de",
-    "type": "TEXT/REAL",
+    "type": "REAL",
     "pk": 0,
     "unit": "ratio",
     "definition": "Debt to Equity Ratio \u2014 [Metrics] Measures the ratio between [Liabilities] and [Equity].",
     "source": "Sharadar `descriptions` table"
    },
    {
-    "name": "data",
-    "type": "TEXT/REAL",
+    "name": "debt",
+    "type": "REAL",
     "pk": 0,
-    "unit": "",
-    "definition": "this repo \u2014 zlib-compressed JSON of the FULL vendor row (all 105 indicator fields beyond the 7 key/date fields)",
-    "source": "this repo (local semantics)"
+    "unit": "currency",
+    "definition": "Total Debt \u2014 [Balance Sheet] A component of [Liabilities] representing the total amount of current and non-current debt owed. Includes secured and unsecured bonds issued; commercial paper; notes payable; credit facilities; lines of credit; capital lease obligations; operating lease obligations; and convertible notes. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "debtc",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Debt Current \u2014 [Balance Sheet] The current portion of [Debt]; reported if the company operates a classified balance sheet that segments current and non-current liabilities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "debtnc",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Debt Non-Current \u2014 [Balance Sheet] The non-current portion of [Debt] reported if the company operates a classified balance sheet that segments current and non-current liabilities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "debtusd",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Total Debt (USD) \u2014 [Balance Sheet] [Debt] in USD; converted by [FXUSD]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "deferredrev",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Deferred Revenue \u2014 [Balance Sheet] A component of [Liabilities] representing the carrying amount of consideration received or receivable on potential earnings that were not recognized as revenue; including sales; license fees; and royalties; but excluding interest income. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "depamor",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Depreciation Amortization & Accretion \u2014 [Cash Flow Statement] A component of operating cash flow representing the aggregate net amount of depreciation; amortization; and accretion recognized during an accounting period. As a non-cash item; the net amount is added back to net income when calculating cash provided by or used in operations using the indirect method. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "deposits",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Deposit Liabilities \u2014 [Balance Sheet] A component of [Liabilities] representing the total of all deposit liabilities held; including foreign and domestic; interest and noninterest bearing. May include demand deposits; saving deposits; Negotiable Order of Withdrawal and time deposits among others. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "divyield",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Dividend Yield \u2014 [Metrics] Dividend Yield measures the ratio between a company's trailing twelve month [DPS] and its close [Price]; by summing dividends by ExDate; provided in the SHARADAR/ACTIONS table; in the twelve months leading up to the date in the [DateKey] indicator.  Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "dps",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Dividends per Basic Common Share \u2014 [Income Statement] Aggregate dividends declared during the period for each split-adjusted share of common stock outstanding. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebit",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Earning Before Interest & Taxes (EBIT) \u2014 [Income Statement] Earnings Before Interest and Tax is calculated by adding [TaxExp] and [IntExp] back to [NetInc].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebitda",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Earnings Before Interest Taxes & Depreciation Amortization (EBITDA) \u2014 [Metrics] EBITDA is a non-GAAP accounting metric that is widely used when assessing the performance of companies; calculated by adding [DepAmor] back to [EBIT].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebitdamargin",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "EBITDA Margin \u2014 [Metrics] Measures the ratio between a company's [EBITDA] and [Revenue].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebitdausd",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Earnings Before Interest Taxes & Depreciation Amortization (USD) \u2014 [Metrics] [EBITDA] in USD; converted by [FXUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebitusd",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Earning Before Interest & Taxes (USD) \u2014 [Income Statement] [EBIT] in USD; converted by [FXUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ebt",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Earnings before Tax \u2014 [Metrics] Earnings Before Tax is calculated by adding [TaxExp] back to [NetInc].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "eps",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency/share",
+    "definition": "Earnings per Basic Share \u2014 [Income Statement] Earnings per share as calculated and reported by the company. Approximates to the amount of [NetIncCmn] for the period per each [SharesWA] after adjusting for [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "epsdil",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency/share",
+    "definition": "Earnings per Diluted Share \u2014 [Income Statement] Earnings per diluted share as calculated and reported by the company. Approximates to the amount of [NetIncCmn] for the period per each [SharesWADil] after adjusting for [ShareFactor]..",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "epsusd",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Earnings per Basic Share (USD) \u2014 [Income Statement] [EPS] in USD; converted by [FXUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "equity",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Shareholders Equity Attributable to Parent \u2014 [Balance Sheet] A principal component of the balance sheet; in addition to [Liabilities] and [Assets]; that represents the total of all stockholders' equity (deficit) items; net of receivables from officers; directors; owners; and affiliates of the entity which are attributable to the parent.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "equityavg",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Average Equity \u2014 [Metrics] Average equity value for the period used in calculation of [ROE]; derived from [Equity].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "equityusd",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Shareholders Equity (USD) \u2014 [Balance Sheet] [Equity] in USD; converted by [FXUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ev",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Enterprise Value \u2014 [Metrics] Enterprise value is a measure of the value of a business as a whole; calculated as [MarketCap] plus [DebtUSD] minus [CashnEqUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "evebit",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Enterprise Value over EBIT \u2014 [Metrics] Measures the ratio between [EV] and [EBITUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "evebitda",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Enterprise Value over EBITDA \u2014 [Metrics] Measures the ratio between [EV] and [EBITDAUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "fcf",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Free Cash Flow \u2014 [Metrics] Free Cash Flow is a measure of financial performance calculated as [NCFO] minus [CapEx].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "fcfps",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency/share",
+    "definition": "Free Cash Flow per Share \u2014 [Metrics] Free Cash Flow per Share is a valuation metric calculated by dividing [FCF] by [SharesWA] and [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "fxusd",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Foreign Currency to USD Exchange Rate \u2014 [Metrics] The exchange rate used for the conversion of foreign currency to USD for non-US companies that do not report in USD.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "gp",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Gross Profit \u2014 [Income Statement] Aggregate revenue [Revenue] less cost of revenue [CoR] directly attributable to the revenue generation activity.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "grossmargin",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Gross Margin \u2014 [Metrics] Gross Margin measures the ratio between a company's [GP] and [Revenue].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "intangibles",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Goodwill and Intangible Assets \u2014 [Balance Sheet] A component of [Assets] representing the carrying amounts of all intangible assets and goodwill as of the balance sheet date; net of accumulated amortization and impairment charges. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "intexp",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Interest Expense \u2014 [Income Statement] Amount of the cost of borrowed funds accounted for as interest expense. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "invcap",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Invested Capital \u2014 [Metrics] Invested capital is an input into the calculation of [ROIC]; and is calculated as: [Debt] plus [Assets] minus [Intangibles] minus [CashnEq] minus [LiabilitiesC]. Please note this calculation method is subject to change.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "invcapavg",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Invested Capital Average \u2014 [Metrics] Average invested capital value for the period used in the calculation of [ROIC]; and derived from [InvCap]. Invested capital is an input into the calculation of [ROIC]; and is calculated as: [Debt] plus [Assets] minus [Intangibles] minus [CashnEq] minus [LiabilitiesC]. Please note this calculation method is subject to change.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "inventory",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Inventory \u2014 [Balance Sheet] A component of [Assets] representing the amount after valuation and reserves of inventory expected to be sold; or consumed within one year or operating cycle; if longer. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "investments",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Investments \u2014 [Balance Sheet] A component of [Assets] representing the total amount of marketable and non-marketable securties; loans receivable; equity-method investments; and other invested assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "investmentsc",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Investments Current \u2014 [Balance Sheet] The current portion of [Investments]; reported if the company operates a classified balance sheet that segments current and non-current assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "investmentsnc",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Investments Non-Current \u2014 [Balance Sheet] The non-current portion of [Investments]; reported if the company operates a classified balance sheet that segments current and non-current assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "liabilities",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Total Liabilities \u2014 [Balance Sheet] Sum of the carrying amounts as of the balance sheet date of all liabilities that are recognized. Principal components are [Debt]; [DeferredRev]; [Payables];[Deposits]; and [TaxLiabilities].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "liabilitiesc",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Current Liabilities \u2014 [Balance Sheet] The current portion of [Liabilities]; reported if the company operates a classified balance sheet that segments current and non-current liabilities.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "liabilitiesnc",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Liabilities Non-Current \u2014 [Balance Sheet] The non-current portion of [Liabilities]; reported if the company operates a classified balance sheet that segments current and non-current liabilities.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "marketcap",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Market Capitalization \u2014 [Metrics] Represents the product of [SharesBas]; [Price] and [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncf",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow / Change in Cash & Cash Equivalents \u2014 [Cash Flow Statement] Principal component of the cash flow statement representing the amount of increase (decrease) in cash and cash equivalents. Includes [NCFO]; investing [NCFI] and financing [NCFF] for continuing and discontinued operations; and the effect of exchange rate changes on cash [NCFX].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfbus",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow - Business Acquisitions and Disposals \u2014 [Cash Flow Statement] A component of [NCFI] representing the net cash inflow (outflow) associated with the acquisition & disposal of businesses; joint-ventures; affiliates; and other named investments. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfcommon",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Issuance (Purchase) of Equity Shares \u2014 [Cash Flow Statement] A component of [NCFF] representing the net cash inflow (outflow) from common equity changes. Includes additional capital contributions from share issuances and exercise of stock options; and outflow from share repurchases.  Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfdebt",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Issuance (Repayment) of Debt Securities  \u2014 [Cash Flow Statement] A component of [NCFF] representing the net cash inflow (outflow) from issuance (repayment) of debt securities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfdiv",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Payment of Dividends & Other Cash Distributions    \u2014 [Cash Flow Statement] A component of [NCFF] representing dividends and dividend equivalents paid on common stock and restricted stock units. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncff",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow from Financing \u2014 [Cash Flow Statement] A component of [NCF] representing the amount of cash inflow (outflow) from financing activities; from continuing and discontinued operations. Principal components of financing cash flow are: issuance (purchase) of equity shares; issuance (repayment) of debt securities; and payment of dividends & other cash distributions. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfi",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow from Investing \u2014 [Cash Flow Statement] A component of [NCF] representing the amount of cash inflow (outflow) from investing activities; from continuing and discontinued operations. Principal components of investing cash flow are: capital (expenditure) disposal of equipment [CapEx]; business (acquisitions) disposition [NCFBus] and investment (acquisition) disposal [NCFInv]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfinv",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow - Investment Acquisitions and Disposals \u2014 [Cash Flow Statement] A component of [NCFI] representing the net cash inflow (outflow) associated with the acquisition & disposal of investments; including marketable securities and loan originations. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfo",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Cash Flow from Operations \u2014 [Cash Flow Statement] A component of [NCF] representing the amount of cash inflow (outflow) from operating activities; from continuing and discontinued operations.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ncfx",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Effect of Exchange Rate Changes on Cash  \u2014 [Cash Flow Statement] A component of Net Cash Flow [NCF] representing the amount of increase (decrease) from the effect of exchange rate changes on cash and cash equivalent balances held in foreign currencies. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netinc",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Income \u2014 [Income Statement] The portion of profit or loss for the period; net of income taxes; which is attributable to the parent after the deduction of [NetIncNCI] from [ConsolInc]; and before the deduction of [PrefDivIS].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netinccmn",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Income Common Stock \u2014 [Income Statement] The amount of net income (loss) for the period due to common shareholders. Typically differs from [NetInc] to the parent entity due to the deduction of [PrefDivIS].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netinccmnusd",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Net Income Common Stock (USD) \u2014 [Income Statement] [NetIncCmn] in USD; converted by [FXUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netincdis",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Loss Income from Discontinued Operations \u2014 [Income Statement] Amount of loss (income) from a disposal group; net of income tax; reported as a separate component of income. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netincnci",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Net Income to Non-Controlling Interests \u2014 [Income Statement] The portion of income which is attributable to non-controlling interest shareholders; subtracted from [ConsolInc] in order to obtain [NetInc]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "netmargin",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Profit Margin \u2014 [Metrics] Measures the ratio between a company's [NetIncCmn] and [Revenue].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "opex",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Operating Expenses \u2014 [Income Statement] Operating expenses represent the total expenditure on [SGnA]; [RnD] and other operating expense items; it excludes [CoR].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "opinc",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Operating Income \u2014 [Income Statement] Operating income is a measure of financial performance before the deduction of [IntExp]; [TaxExp] and other Non-Operating items. It is calculated as [GP] minus [OpEx].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "payables",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Trade and Non-Trade Payables \u2014 [Balance Sheet] A component of [Liabilities] representing trade and non-trade payables. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "payoutratio",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Payout Ratio \u2014 [Metrics] The percentage of earnings paid as dividends to common stockholders. Calculated by dividing [DPS] by [EPSUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "pb",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Price to Book Value \u2014 [Metrics] Measures the ratio between [MarketCap] and [EquityUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "pe",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Price Earnings (Damodaran Method) \u2014 [Metrics] Measures the ratio between [MarketCap] and [NetIncCmnUSD]",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "pe1",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Price to Earnings Ratio \u2014 [Metrics] An alternative to [PE] representing the ratio between [Price] and [EPSUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ppnenet",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Property Plant & Equipment Net \u2014 [Balance Sheet] A component of [Assets] representing the amount after accumulated depreciation; depletion and amortization of physical assets used in the normal conduct of business to produce goods and services and not intended for resale. Includes Operating Right of Use Assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "prefdivis",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Preferred Dividends Income Statement Impact \u2014 [Income Statement] Income statement item reflecting dividend payments to preferred stockholders. Subtracted from Net Income to Parent [NetInc] to obtain Net Income to Common Stockholders [NetIncCmn]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "price",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Share Price (Adjusted Close) \u2014 [Entity] The price per common share adjusted for stock splits but not adjusted for dividends; used in the computation of [PE1]; [PS1]; [DivYield] and [SPS].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ps",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Price Sales (Damodaran Method) \u2014 [Metrics] Measures the ratio between [MarketCap] and [RevenueUSD].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ps1",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Price to Sales Ratio \u2014 [Metrics] An alternative calculation method to [PS]; that measures the ratio between a company's [Price] and it's [SPS].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "receivables",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Trade and Non-Trade Receivables \u2014 [Balance Sheet] A component of [Assets] representing trade and non-trade receivables. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "retearn",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Accumulated Retained Earnings (Deficit) \u2014 [Balance Sheet] A component of [Equity] representing the cumulative amount of the entities undistributed earnings or deficit. May only be reported annually by certain companies; rather than quarterly.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "revenue",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Revenues \u2014 [Income Statement] The amount of Revenue recognised from goods sold; services rendered; insurance premiums; or other activities that constitute an earning process. Interest income for financial institutions is reported net of interest expense and provision for credit losses. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "revenueusd",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "Revenues (USD) \u2014 [Income Statement] [Revenue] in USD; converted by [FXUSD]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "rnd",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Research and Development Expense \u2014 [Income Statement] A component of [OpEx] representing the aggregate costs incurred in a planned search or critical investigation aimed at discovery of new knowledge with the hope that such knowledge will be useful in developing a new product or service. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "roa",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Return on Average Assets \u2014 [Metrics] Return on assets measures how profitable a company is [NetIncCmn] relative to its total assets [AssetsAvg].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "roe",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Return on Average Equity \u2014 [Metrics] Return on equity measures a corporation's profitability by calculating the amount of [NetIncCmn] returned as a percentage of [EquityAvg].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "roic",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Return on Invested Capital \u2014 [Metrics] Return on Invested Capital is a ratio estimated by dividing [EBIT] by [InvCapAvg]. [InvCap] is calculated as: [Debt] plus [Assets] minus [Intangibles] minus [CashnEq] minus [LiabilitiesC]. Please note this calculation method is subject to change.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "ros",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Return on Sales \u2014 [Metrics] Return on Sales is a ratio to evaluate a company's operational efficiency; calculated by dividing [EBIT] by [Revenue]. ROS is often a component of DuPont ROE analysis.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sbcomp",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Share Based Compensation \u2014 [Cash Flow Statement] A component of [NCFO] representing the total amount of noncash; equity-based employee remuneration. This may include the value of stock or unit options; amortization of restricted stock or units; and adjustment for officers' compensation. As noncash; this element is an add back when calculating net cash generated by operating activities using the indirect method.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sgna",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Selling General and Administrative Expense \u2014 [Income Statement] A component of [OpEx] representing the aggregate total costs related to selling a firm's product and services; as well as all other general and administrative expenses. Direct selling expenses (for example; credit; warranty; and advertising) are expenses that can be directly linked to the sale of specific products. Indirect selling expenses are expenses that cannot be directly linked to the sale of specific products; for example telephone expenses; Internet; and postal charges. General and administrative expenses include salaries of non-sales personnel; rent; utilities; communication; etc. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sharefactor",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "ratio",
+    "definition": "Share Factor \u2014 [Entity] Share factor is a multiplicand in the calculation of [MarketCap] and is used to adjust for: American Depository Receipts (ADRs) that represent more or less than 1 underlying share; and; companies which have different earnings share for different share classes (eg Berkshire Hathaway - BRK.B).",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sharesbas",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "units",
+    "definition": "Shares (Basic) \u2014 [Entity] The number of shares or other units outstanding of the entity's capital or common stock or other ownership interests; as stated on the cover of related periodic report (10-K/10-Q); after adjustment for stock splits.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "shareswa",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "units",
+    "definition": "Weighted Average Shares \u2014 [Income Statement] The weighted average number of shares or units issued and outstanding that are used by the company to calculate [EPS]; determined based on the timing of issuance of shares or units in the period.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "shareswadil",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "units",
+    "definition": "Weighted Average Shares Diluted \u2014 [Income Statement] The weighted average number of shares or units issued and outstanding that are used by the company to calculate [EPSDil]; determined based on the timing of issuance of shares or units in the period.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "sps",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "Sales per Share \u2014 [Metrics] Sales per Share measures the ratio between [RevenueUSD] and [SharesWA] as adjusted by [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "tangibles",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Tangible Asset Value \u2014 [Metrics] The value of tangibles assets calculated as the difference between [Assets] and [Intangibles].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "taxassets",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Tax Assets \u2014 [Balance Sheet] A component of [Assets] representing tax assets and receivables. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "taxexp",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Income Tax Expense \u2014 [Income Statement] Amount of current income tax expense (benefit) and deferred income tax expense (benefit) pertaining to continuing operations. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "taxliabilities",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Tax Liabilities \u2014 [Balance Sheet] A component of [Liabilities] representing outstanding tax liabilities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "tbvps",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency/share",
+    "definition": "Tangible Assets Book Value per Share \u2014 [Metrics] Measures the ratio between [Tangibles] and [SharesWA] as adjusted by [ShareFactor].",
+    "source": "Sharadar `descriptions` table"
+   },
+   {
+    "name": "workingcapital",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "currency",
+    "definition": "Working Capital \u2014 [Metrics] Working capital measures the difference between [AssetsC] and [LiabilitiesC].",
+    "source": "Sharadar `descriptions` table"
    }
   ]
  },
@@ -884,628 +1485,6 @@
    }
   ],
   "notes": "from the SEP/SFP bulk price columns; closeadj/closeunadj collapsed into `adjustment`; stored close = closeunadj (as-traded), OHLC as-traded (vendor OHLC are split-adjusted)"
- },
- "sf1_blob": {
-  "origin": "RAW (fundamentals zip) \u2014 inside sf1.data",
-  "key": "same as sf1",
-  "columns": [
-   {
-    "name": "accoci",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Accumulated Other Comprehensive Income \u2014 [Balance Sheet] A component of [Equity] representing the accumulated change in equity from transactions and other events and circumstances from non-owner sources; net of tax effect; at period end. Includes foreign currency translation items; certain pension adjustments; unrealized gains and losses on certain investments in debt and equity securities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "assetsavg",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Average Assets \u2014 [Metrics] Average asset value for the period used in calculation of [ROE] and [ROA]; derived from [Assets].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "assetsc",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Current Assets \u2014 [Balance Sheet] The current portion of [Assets]; reported if a company operates a classified balance sheet that segments current and non-current assets.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "assetsnc",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Assets Non-Current \u2014 [Balance Sheet] Amount of non-current assets; for companies that operate a classified balance sheet. Calculated as the different between Total Assets [Assets] and Current Assets [AssetsC].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "assetturnover",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Asset Turnover \u2014 [Metrics] Asset turnover is a measure of a firms operating efficiency; calculated by dividing [Revenue] by [AssetsAVG]. Often a component of DuPont ROE analysis.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "bvps",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency/share",
-    "definition": "Book Value per Share \u2014 [Metrics] Measures the ratio between [Equity] and [SharesWA] as adjusted by [ShareFactor].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "cashnequsd",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "USD",
-    "definition": "Cash and Equivalents (USD) \u2014 [Balance Sheet] [CashnEq] in USD; converted by [FXUSD]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "consolinc",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Consolidated Income \u2014 [Income Statement] The portion of profit or loss for the period; net of income taxes; which is attributable to the consolidated entity; before the deduction of [NetIncNCI].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "cor",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Cost of Revenue \u2014 [Income Statement] The aggregate cost of goods produced and sold and services rendered during the reporting period. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "datekey",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "date (YYYY-MM-DD)",
-    "definition": "Date Key \u2014 [Entity] The Date Key represents the SEC filing date for AR dimensions (ARQ;ART;ARY); and the [REPORTPERIOD] for MR dimensions (MRQ;MRT;MRY). In addition; this is the observation date used for [Price] based data such as [MarketCap]; [Price] and [PE].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "debt",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Total Debt \u2014 [Balance Sheet] A component of [Liabilities] representing the total amount of current and non-current debt owed. Includes secured and unsecured bonds issued; commercial paper; notes payable; credit facilities; lines of credit; capital lease obligations; operating lease obligations; and convertible notes. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "debtc",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Debt Current \u2014 [Balance Sheet] The current portion of [Debt]; reported if the company operates a classified balance sheet that segments current and non-current liabilities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "debtnc",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Debt Non-Current \u2014 [Balance Sheet] The non-current portion of [Debt] reported if the company operates a classified balance sheet that segments current and non-current liabilities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "debtusd",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "USD",
-    "definition": "Total Debt (USD) \u2014 [Balance Sheet] [Debt] in USD; converted by [FXUSD]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "deferredrev",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Deferred Revenue \u2014 [Balance Sheet] A component of [Liabilities] representing the carrying amount of consideration received or receivable on potential earnings that were not recognized as revenue; including sales; license fees; and royalties; but excluding interest income. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "depamor",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Depreciation Amortization & Accretion \u2014 [Cash Flow Statement] A component of operating cash flow representing the aggregate net amount of depreciation; amortization; and accretion recognized during an accounting period. As a non-cash item; the net amount is added back to net income when calculating cash provided by or used in operations using the indirect method. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "deposits",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Deposit Liabilities \u2014 [Balance Sheet] A component of [Liabilities] representing the total of all deposit liabilities held; including foreign and domestic; interest and noninterest bearing. May include demand deposits; saving deposits; Negotiable Order of Withdrawal and time deposits among others. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ebit",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Earning Before Interest & Taxes (EBIT) \u2014 [Income Statement] Earnings Before Interest and Tax is calculated by adding [TaxExp] and [IntExp] back to [NetInc].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ebitdamargin",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "EBITDA Margin \u2014 [Metrics] Measures the ratio between a company's [EBITDA] and [Revenue].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ebitdausd",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "USD",
-    "definition": "Earnings Before Interest Taxes & Depreciation Amortization (USD) \u2014 [Metrics] [EBITDA] in USD; converted by [FXUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ebitusd",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "USD",
-    "definition": "Earning Before Interest & Taxes (USD) \u2014 [Income Statement] [EBIT] in USD; converted by [FXUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ebt",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Earnings before Tax \u2014 [Metrics] Earnings Before Tax is calculated by adding [TaxExp] back to [NetInc].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "epsdil",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency/share",
-    "definition": "Earnings per Diluted Share \u2014 [Income Statement] Earnings per diluted share as calculated and reported by the company. Approximates to the amount of [NetIncCmn] for the period per each [SharesWADil] after adjusting for [ShareFactor]..",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "epsusd",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "USD/share",
-    "definition": "Earnings per Basic Share (USD) \u2014 [Income Statement] [EPS] in USD; converted by [FXUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "equityavg",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Average Equity \u2014 [Metrics] Average equity value for the period used in calculation of [ROE]; derived from [Equity].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "equityusd",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "USD",
-    "definition": "Shareholders Equity (USD) \u2014 [Balance Sheet] [Equity] in USD; converted by [FXUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "evebit",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Enterprise Value over EBIT \u2014 [Metrics] Measures the ratio between [EV] and [EBITUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "evebitda",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Enterprise Value over EBITDA \u2014 [Metrics] Measures the ratio between [EV] and [EBITDAUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "fcfps",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency/share",
-    "definition": "Free Cash Flow per Share \u2014 [Metrics] Free Cash Flow per Share is a valuation metric calculated by dividing [FCF] by [SharesWA] and [ShareFactor].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "fxusd",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Foreign Currency to USD Exchange Rate \u2014 [Metrics] The exchange rate used for the conversion of foreign currency to USD for non-US companies that do not report in USD.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "gp",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Gross Profit \u2014 [Income Statement] Aggregate revenue [Revenue] less cost of revenue [CoR] directly attributable to the revenue generation activity.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "intangibles",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Goodwill and Intangible Assets \u2014 [Balance Sheet] A component of [Assets] representing the carrying amounts of all intangible assets and goodwill as of the balance sheet date; net of accumulated amortization and impairment charges. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "intexp",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Interest Expense \u2014 [Income Statement] Amount of the cost of borrowed funds accounted for as interest expense. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "invcap",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Invested Capital \u2014 [Metrics] Invested capital is an input into the calculation of [ROIC]; and is calculated as: [Debt] plus [Assets] minus [Intangibles] minus [CashnEq] minus [LiabilitiesC]. Please note this calculation method is subject to change.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "invcapavg",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Invested Capital Average \u2014 [Metrics] Average invested capital value for the period used in the calculation of [ROIC]; and derived from [InvCap]. Invested capital is an input into the calculation of [ROIC]; and is calculated as: [Debt] plus [Assets] minus [Intangibles] minus [CashnEq] minus [LiabilitiesC]. Please note this calculation method is subject to change.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "inventory",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Inventory \u2014 [Balance Sheet] A component of [Assets] representing the amount after valuation and reserves of inventory expected to be sold; or consumed within one year or operating cycle; if longer. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "investments",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Investments \u2014 [Balance Sheet] A component of [Assets] representing the total amount of marketable and non-marketable securties; loans receivable; equity-method investments; and other invested assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "investmentsc",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Investments Current \u2014 [Balance Sheet] The current portion of [Investments]; reported if the company operates a classified balance sheet that segments current and non-current assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "investmentsnc",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Investments Non-Current \u2014 [Balance Sheet] The non-current portion of [Investments]; reported if the company operates a classified balance sheet that segments current and non-current assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "liabilitiesc",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Current Liabilities \u2014 [Balance Sheet] The current portion of [Liabilities]; reported if the company operates a classified balance sheet that segments current and non-current liabilities.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "liabilitiesnc",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Liabilities Non-Current \u2014 [Balance Sheet] The non-current portion of [Liabilities]; reported if the company operates a classified balance sheet that segments current and non-current liabilities.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ncf",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Net Cash Flow / Change in Cash & Cash Equivalents \u2014 [Cash Flow Statement] Principal component of the cash flow statement representing the amount of increase (decrease) in cash and cash equivalents. Includes [NCFO]; investing [NCFI] and financing [NCFF] for continuing and discontinued operations; and the effect of exchange rate changes on cash [NCFX].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ncfbus",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Net Cash Flow - Business Acquisitions and Disposals \u2014 [Cash Flow Statement] A component of [NCFI] representing the net cash inflow (outflow) associated with the acquisition & disposal of businesses; joint-ventures; affiliates; and other named investments. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ncfcommon",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Issuance (Purchase) of Equity Shares \u2014 [Cash Flow Statement] A component of [NCFF] representing the net cash inflow (outflow) from common equity changes. Includes additional capital contributions from share issuances and exercise of stock options; and outflow from share repurchases.  Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ncfdebt",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Issuance (Repayment) of Debt Securities  \u2014 [Cash Flow Statement] A component of [NCFF] representing the net cash inflow (outflow) from issuance (repayment) of debt securities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ncfdiv",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Payment of Dividends & Other Cash Distributions    \u2014 [Cash Flow Statement] A component of [NCFF] representing dividends and dividend equivalents paid on common stock and restricted stock units. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ncff",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Net Cash Flow from Financing \u2014 [Cash Flow Statement] A component of [NCF] representing the amount of cash inflow (outflow) from financing activities; from continuing and discontinued operations. Principal components of financing cash flow are: issuance (purchase) of equity shares; issuance (repayment) of debt securities; and payment of dividends & other cash distributions. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ncfi",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Net Cash Flow from Investing \u2014 [Cash Flow Statement] A component of [NCF] representing the amount of cash inflow (outflow) from investing activities; from continuing and discontinued operations. Principal components of investing cash flow are: capital (expenditure) disposal of equipment [CapEx]; business (acquisitions) disposition [NCFBus] and investment (acquisition) disposal [NCFInv]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ncfinv",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Net Cash Flow - Investment Acquisitions and Disposals \u2014 [Cash Flow Statement] A component of [NCFI] representing the net cash inflow (outflow) associated with the acquisition & disposal of investments; including marketable securities and loan originations. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ncfx",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Effect of Exchange Rate Changes on Cash  \u2014 [Cash Flow Statement] A component of Net Cash Flow [NCF] representing the amount of increase (decrease) from the effect of exchange rate changes on cash and cash equivalent balances held in foreign currencies. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "netinccmnusd",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "USD",
-    "definition": "Net Income Common Stock (USD) \u2014 [Income Statement] [NetIncCmn] in USD; converted by [FXUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "netincdis",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Net Loss Income from Discontinued Operations \u2014 [Income Statement] Amount of loss (income) from a disposal group; net of income tax; reported as a separate component of income. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "netincnci",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Net Income to Non-Controlling Interests \u2014 [Income Statement] The portion of income which is attributable to non-controlling interest shareholders; subtracted from [ConsolInc] in order to obtain [NetInc]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "opex",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Operating Expenses \u2014 [Income Statement] Operating expenses represent the total expenditure on [SGnA]; [RnD] and other operating expense items; it excludes [CoR].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "opinc",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Operating Income \u2014 [Income Statement] Operating income is a measure of financial performance before the deduction of [IntExp]; [TaxExp] and other Non-Operating items. It is calculated as [GP] minus [OpEx].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "payables",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Trade and Non-Trade Payables \u2014 [Balance Sheet] A component of [Liabilities] representing trade and non-trade payables. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "payoutratio",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Payout Ratio \u2014 [Metrics] The percentage of earnings paid as dividends to common stockholders. Calculated by dividing [DPS] by [EPSUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "pe1",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Price to Earnings Ratio \u2014 [Metrics] An alternative to [PE] representing the ratio between [Price] and [EPSUSD].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ppnenet",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Property Plant & Equipment Net \u2014 [Balance Sheet] A component of [Assets] representing the amount after accumulated depreciation; depletion and amortization of physical assets used in the normal conduct of business to produce goods and services and not intended for resale. Includes Operating Right of Use Assets. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "prefdivis",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Preferred Dividends Income Statement Impact \u2014 [Income Statement] Income statement item reflecting dividend payments to preferred stockholders. Subtracted from Net Income to Parent [NetInc] to obtain Net Income to Common Stockholders [NetIncCmn]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ps1",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Price to Sales Ratio \u2014 [Metrics] An alternative calculation method to [PS]; that measures the ratio between a company's [Price] and it's [SPS].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "receivables",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Trade and Non-Trade Receivables \u2014 [Balance Sheet] A component of [Assets] representing trade and non-trade receivables. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "retearn",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Accumulated Retained Earnings (Deficit) \u2014 [Balance Sheet] A component of [Equity] representing the cumulative amount of the entities undistributed earnings or deficit. May only be reported annually by certain companies; rather than quarterly.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "revenueusd",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "USD",
-    "definition": "Revenues (USD) \u2014 [Income Statement] [Revenue] in USD; converted by [FXUSD]. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "rnd",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Research and Development Expense \u2014 [Income Statement] A component of [OpEx] representing the aggregate costs incurred in a planned search or critical investigation aimed at discovery of new knowledge with the hope that such knowledge will be useful in developing a new product or service. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "ros",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Return on Sales \u2014 [Metrics] Return on Sales is a ratio to evaluate a company's operational efficiency; calculated by dividing [EBIT] by [Revenue]. ROS is often a component of DuPont ROE analysis.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "sbcomp",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Share Based Compensation \u2014 [Cash Flow Statement] A component of [NCFO] representing the total amount of noncash; equity-based employee remuneration. This may include the value of stock or unit options; amortization of restricted stock or units; and adjustment for officers' compensation. As noncash; this element is an add back when calculating net cash generated by operating activities using the indirect method.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "sgna",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Selling General and Administrative Expense \u2014 [Income Statement] A component of [OpEx] representing the aggregate total costs related to selling a firm's product and services; as well as all other general and administrative expenses. Direct selling expenses (for example; credit; warranty; and advertising) are expenses that can be directly linked to the sale of specific products. Indirect selling expenses are expenses that cannot be directly linked to the sale of specific products; for example telephone expenses; Internet; and postal charges. General and administrative expenses include salaries of non-sales personnel; rent; utilities; communication; etc. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "sharefactor",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "ratio",
-    "definition": "Share Factor \u2014 [Entity] Share factor is a multiplicand in the calculation of [MarketCap] and is used to adjust for: American Depository Receipts (ADRs) that represent more or less than 1 underlying share; and; companies which have different earnings share for different share classes (eg Berkshire Hathaway - BRK.B).",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "sharesbas",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "units",
-    "definition": "Shares (Basic) \u2014 [Entity] The number of shares or other units outstanding of the entity's capital or common stock or other ownership interests; as stated on the cover of related periodic report (10-K/10-Q); after adjustment for stock splits.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "sps",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "USD/share",
-    "definition": "Sales per Share \u2014 [Metrics] Sales per Share measures the ratio between [RevenueUSD] and [SharesWA] as adjusted by [ShareFactor].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "tangibles",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Tangible Asset Value \u2014 [Metrics] The value of tangibles assets calculated as the difference between [Assets] and [Intangibles].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "taxassets",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Tax Assets \u2014 [Balance Sheet] A component of [Assets] representing tax assets and receivables. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "taxexp",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Income Tax Expense \u2014 [Income Statement] Amount of current income tax expense (benefit) and deferred income tax expense (benefit) pertaining to continuing operations. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "taxliabilities",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Tax Liabilities \u2014 [Balance Sheet] A component of [Liabilities] representing outstanding tax liabilities. Where this item is not contained on the company consolidated financial statements and cannot otherwise be imputed the value of 0 is used.",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "tbvps",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency/share",
-    "definition": "Tangible Assets Book Value per Share \u2014 [Metrics] Measures the ratio between [Tangibles] and [SharesWA] as adjusted by [ShareFactor].",
-    "source": "Sharadar `descriptions` table"
-   },
-   {
-    "name": "workingcapital",
-    "type": "in blob",
-    "pk": 0,
-    "unit": "currency",
-    "definition": "Working Capital \u2014 [Metrics] Working capital measures the difference between [AssetsC] and [LiabilitiesC].",
-    "source": "Sharadar `descriptions` table"
-   }
-  ]
  },
  "fundamentals": {
   "origin": "DERIVED (sf1 ARY)",
