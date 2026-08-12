@@ -1,0 +1,13 @@
+/*-- scss:defaults --*/
+$primary: #1f3b63;
+$body-color: #1b1b1b;
+$body-bg: #ffffff;
+$headings-font-family: "Georgia", "Times New Roman", serif;
+$font-family-serif: "Georgia", "Times New Roman", serif;
+$headings-color: $primary;
+$code-color: #8a4b2f;
+
+/*-- scss:rules --*/
+h1, h2, h3, h4 { font-family: $headings-font-family; }
+.quarto-title-block h1.title { font-size: 1.9em; }
+p, li { font-family: $font-family-serif; }

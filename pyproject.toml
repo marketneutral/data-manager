@@ -20,6 +20,10 @@ packages = ["src/data_manager"]
 [dependency-groups]
 dev = [
     "pytest>=8",
+    "pandas>=2",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+    "ipykernel>=6",
 ]
 
 [tool.pytest.ini_options]

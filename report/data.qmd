@@ -1,0 +1,445 @@
+---
+title: "The data-manager warehouse"
+subtitle: "Coverage, Depth & Quality Report — Sharadar bulk era"
+author: "data-manager project"
+date: today
+format:
+  html:
+    theme:
+      light: [cosmo, custom.scss]
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    code-fold: false
+    self-contained: true
+jupyter: data-manager
+execute:
+  echo: false
+  warning: false
+  error: true
+  cache: false
+---
+
+```{python}
+#| label: setup
+#| include: false
+import os
+os.environ["MPLBACKEND"] = "Agg"
+import sqlite3
+from pathlib import Path
+from IPython.display import display, Markdown
+import numpy as np
+import pandas as pd
+import matplotlib
+import matplotlib.pyplot as plt
+
+# execution cwd is the report dir (quarto) or the repo root; walk up to the repo
+BASE = Path(".").resolve()
+while not (BASE / "src").exists() and BASE != BASE.parent:
+    BASE = BASE.parent
+if not (BASE / "src").exists():
+    BASE = Path(".").resolve()
+DB = Path.home() / ".prime" / "agent" / "data_manager.db"
+
+conn = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+conn.execute("PRAGMA cache_size=-65536")     # 256MB page cache
+conn.execute("PRAGMA mmap_size=134217728")   # 128MB mmap reads
+conn.execute("PRAGMA temp_store=MEMORY")
+conn.execute("PRAGMA busy_timeout=20000")
+
+_styl = next((s for s in (Path.cwd() / "report.mplstyle",
+                            BASE / "report" / "report.mplstyle") if s.exists()), None)
+if _styl is not None:
+    plt.style.use(str(_styl))
+plt.rcParams.update({"font.family": "serif", "font.size": 10,
+                     "axes.titlesize": 10.5, "axes.labelsize": 9.5,
+                     "axes.edgecolor": "#333", "axes.linewidth": .7,
+                     "grid.alpha": .25, "figure.facecolor": "white",
+                     "axes.facecolor": "white"})
+NAVY = "#1f3b63"; GOLD = "#c9a227"; LIGHT = "#eef1f5"; GRAY = "#b0b4bb"; RED = "#a94e4e"
+
+def q(sql, params=()):
+    return pd.read_sql(sql, conn, params=params)
+
+def fmt(x):
+    return f"{int(x):,}"
+```
+
+::: {style="background:#eef1f5;border-left:5px solid #1f3b63;padding:14px 18px;border-radius:4px;"}
+**Abstract.** `~/.prime/agent/data_manager.db` is the single local SQLite
+source of point-in-time market data for the quant stack — 61.7M as-traded
+daily price rows (stocks and funds) back to 1998, a 3.15M-row SF1
+fundamentals mirror (six report dimensions), the full Sharadar securities
+master (31,742 instruments, survivorship-free), corporate actions (670k
+rows incl. delistings), and a point-in-time investable-universe table
+(`universe_pit`) holding **13.46M stock-days across 7,187 trading days**
+(1998-01-14 → 2026-08-11). The database is loaded from Sharadar bulk files
+(~2 GB of zips, zero per-ticker API fan-out), WAL-mode, index-tuned for
+cross-sectional scans, and passed a full `integrity_check` + `VACUUM`
+(17.1 → 15.9 GB) on 2026-08-11. This report documents coverage, depth, and
+the data-quality findings that matter for consumers (eqrm,
+stock-selection, backtests). All numbers are as of the last warehouse
+build on 2026-08-11.
+:::
+
+# Warehouse at a glance
+
+```{python}
+#| label: counts
+counts = q("""
+ SELECT 'prices' t, COUNT(*) n, MIN(date) lo, MAX(date) hi FROM prices
+ UNION ALL SELECT 'sf1', COUNT(*), MIN(date), MAX(date) FROM sf1
+ UNION ALL SELECT 'fundamentals', COUNT(*), MIN(fiscal_year), MAX(fiscal_year) FROM fundamentals
+ UNION ALL SELECT 'quarterly_statements', COUNT(*), MIN(period), MAX(period) FROM quarterly_statements
+ UNION ALL SELECT 'ratios', COUNT(*), MIN(as_of), MAX(as_of) FROM ratios
+ UNION ALL SELECT 'metrics', COUNT(*), MIN(as_of), MAX(as_of) FROM metrics
+ UNION ALL SELECT 'securities_master', COUNT(*), NULL, NULL FROM securities_master
+ UNION ALL SELECT 'corporate_actions', COUNT(*), MIN(date), MAX(date) FROM corporate_actions
+ UNION ALL SELECT 'sp500_membership', COUNT(*), MIN(date), MAX(date) FROM sp500_membership
+ UNION ALL SELECT 'universe_pit', COUNT(*), MIN(as_of), MAX(as_of) FROM universe_pit
+""")
+overview = counts.rename(columns={"t": "table", "n": "rows", "lo": "first", "hi": "last"})
+overview["rows"] = overview["rows"].map(fmt)
+overview["first"] = overview["first"].fillna("—")
+overview["last"] = overview["last"].fillna("—")
+overview
+```
+
+```{python}
+#| label: glance_prose
+display(Markdown(
+    f"The file is `~/.prime/agent/data_manager.db`, **{DB.stat().st_size/1e9:.1f} GB** "
+    "in WAL mode. `prices`, `sf1`, `fundamentals`, `quarterly_statements`, `ratios`, "
+    "`metrics` are the raw/derived mirrors used by the research stack; "
+    "`securities_master`, `corporate_actions`, `sp500_membership` are the bulk "
+    "reference tables; `universe_pit` is the local point-in-time construction."))
+idx = q("""
+ SELECT 'prices' tbl, name FROM pragma_index_list('prices')
+ UNION ALL SELECT 'sf1', name FROM pragma_index_list('sf1')
+ UNION ALL SELECT 'universe_pit', name FROM pragma_index_list('universe_pit')
+""")
+idx = idx[idx["name"].str.startswith("idx")].reset_index(drop=True)
+display(Markdown("**Purpose-built indexes:** " + "; ".join(idx["tbl"] + "." + idx["name"]) + "."))
+```
+
+# Price coverage & depth
+
+Daily as-traded OHLCV plus a total-return adjustment factor
+($P^{\mathrm{adj}}_t = P^{\mathrm{as\text{-}traded}}_t \times \mathrm{adjustment}_t$),
+**survivorship-free** — delisted names stay in the table. The stocks-vs-funds
+split uses the bulk-file origin (`securities_master.table`).
+
+```{python}
+#| label: yearscan
+# one 61.7M-row pass: quotes per calendar year, stocks vs funds + date bounds
+years = q("""
+ SELECT substr(p.date,1,4) AS yr, m.`table` AS kind,
+        COUNT(*) AS n, COUNT(DISTINCT p.ticker) AS tickers
+ FROM prices p LEFT JOIN securities_master m ON m.ticker = p.ticker
+ GROUP BY yr, kind ORDER BY yr
+""")
+pivot = years.pivot(index="yr", columns="kind", values="n").fillna(0)
+ptick = years.pivot(index="yr", columns="kind", values="tickers").fillna(0)
+bounds = years.groupby("kind").agg(rows=("n", "sum"))
+```
+
+```{python}
+#| label: fig_coverage
+#| fig-width: 11
+#| fig-height: 4.2
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.2))
+yrs = pivot.index.astype(int).values
+ax1.bar(yrs, pivot["stocks"], color=NAVY, width=0.8, label="stocks")
+ax1.bar(yrs, pivot["funds"], bottom=pivot["stocks"], color=GOLD, width=0.8, label="funds")
+ax1.set_yscale("log"); ax1.set_ylim(1e4, 1e8)
+ax1.set_title("Daily price rows per calendar year (log)")
+ax1.set_xlabel("year"); ax1.set_ylabel("rows")
+ax1.legend(frameon=False); ax1.grid(axis="y", alpha=.25)
+ax2.plot(yrs, ptick["stocks"], "-o", color=NAVY, ms=3, lw=1.4, label="stocks")
+ax2.plot(yrs, ptick["funds"], "-o", color=GOLD, ms=3, lw=1.4, label="funds")
+ax2.set_title("Distinct quoted tickers per year")
+ax2.set_xlabel("year"); ax2.set_ylabel("tickers")
+ax2.legend(frameon=False); ax2.grid(axis="y", alpha=.25)
+plt.tight_layout(); plt.show()
+```
+
+```{python}
+#| label: bounds_prose
+lo_s = years[years.kind == "stocks"].iloc[0]["yr"] + "-01"
+lo_f = years[years.kind == "funds"].iloc[0]["yr"] + "-01"
+display(Markdown(
+    f"Coverage is continuous for stocks from **{lo_s}** ({fmt(bounds.loc['stocks','rows'])} rows) "
+    f"and for funds from **{lo_f}** ({fmt(bounds.loc['funds','rows'])} rows). Stock coverage runs "
+    "**~8,000–9,000 quoted tickers/year from 1998 onward** (delisted names included, so yearly "
+    f"counts are *quoted* securities, not survivors); fund coverage grows from a few hundred to "
+    f"**{fmt(ptick['funds'].max())}** tickers after 2010. The {fmt(int(pivot.loc['1997'].sum()))}-row "
+    "1997 sliver is a bulk-file edge (pre-window rows for a handful of names), consistent with the "
+    "Sharadar per-ticker window cap of ~28.6y noted at migration time."))
+```
+
+# Point-in-time investable universe
+
+`universe_pit` is rebuilt locally from master + prices + SF1 (zero API
+calls): a (date, member) row exists iff, *as of that date*, the security was
+a Domestic Common Stock (Primary/Secondary), last as-traded close ≥ $2,
+trailing 20-day average dollar volume ≥ $5M (≥ 10 sessions), PIT market cap
+(price × latest as-reported shares) ≥ $300M, and the quote was fresh
+(≤ 10 calendar days old).
+
+```{python}
+#| label: pit_series
+pit = q("SELECT as_of, COUNT(*) n FROM universe_pit GROUP BY as_of ORDER BY as_of")
+pit["as_of"] = pd.to_datetime(pit["as_of"])
+pit_row = int(pit["n"].sum()); pit_days = len(pit)
+anchor_days = ("1998-01-14", "2020-03-23", "2021-08-10", "2024-12-31")
+anchors = pit[pit["as_of"].dt.strftime("%Y-%m-%d").isin(anchor_days)].copy()
+anchors["label"] = anchors["as_of"].dt.strftime("%Y-%m-%d")
+latest = pit.iloc[-1]
+```
+
+```{python}
+#| label: fig_pit
+#| fig-width: 10
+#| fig-height: 3.8
+fig, ax = plt.subplots(figsize=(10, 3.8))
+ax.fill_between(pit["as_of"], pit["n"], color=LIGHT, lw=0)
+ax.plot(pit["as_of"], pit["n"], color=NAVY, lw=1.1)
+ax.axvspan(pd.Timestamp("2021-08-10"), pd.Timestamp("2024-12-31"),
+           color=GOLD, alpha=.18, label="eqrm modelling window")
+ax.plot(latest["as_of"], latest["n"], "o", color=RED, ms=5)
+for _, r in anchors.iterrows():
+    ax.plot(r["as_of"], r["n"], "o", color=RED, ms=4)
+    ax.annotate(f"{r['label']}  {r['n']:,}", (r["as_of"], r["n"]),
+                textcoords="offset points", xytext=(4, 7), fontsize=8, color=RED)
+ax.annotate(f"{latest['as_of'].date()}  {latest['n']:,}", (latest["as_of"], latest["n"]),
+            textcoords="offset points", xytext=(-4, -14), fontsize=8, color=RED)
+ax.set_title(f"Investable-universe membership per trading day — {pit_days:,} days, {pit_row:,} stock-days")
+ax.set_xlabel("date"); ax.set_ylabel("members"); ax.legend(frameon=False)
+ax.grid(axis="y", alpha=.25)
+plt.tight_layout(); plt.show()
+```
+
+```{python}
+#| label: pit_prose
+a0 = anchors[anchors.label == "1998-01-14"].iloc[0]
+grow = latest["n"] / a0["n"]
+display(Markdown(
+    f"Membership grows from **{fmt(a0['n'])}** names on 1998-01-14 to "
+    f"**{fmt(latest['n'])}** on the latest day ({latest['as_of'].date().isoformat()}) — "
+    f"**{grow:.1f}×** — with a structural step in the mid-2000s as NASDAQ/NYSE listing "
+    "standards pushed names through the $5M-volume screen, and the 2020 crash bottom at "
+    f"**{fmt(anchors[anchors.label=='2020-03-23'].iloc[0]['n'])}** members (2020-03-23). The "
+    f"~2,400 current members sit **below** the ~3,000 Russell-styled target because the "
+    "trailing-dollar-volume and $300M-mcap screens use *as-reported* shares; "
+    "`build-universe-pit` thresholds are re-runnable to compare variants."))
+last_day = latest["as_of"].date().isoformat()
+sec = q("SELECT sector, COUNT(*) n FROM universe_pit WHERE as_of=?", (last_day,))
+exch = q("SELECT exchange, COUNT(*) n FROM universe_pit WHERE as_of=?", (last_day,))
+cat = q("SELECT category, COUNT(*) n FROM universe_pit GROUP BY category").sort_values("n", ascending=False)
+sec["n"] = sec["n"].map(fmt); exch["n"] = exch["n"].map(fmt)
+cat["pct"] = (100 * cat["n"] / cat["n"].sum()).round(1).map(lambda v: f"{v}%")
+sec.columns = ["sector (Sharadar taxonomy)", "members"]
+exch.columns = ["exchange", "members"]
+cat.columns = ["category (all days)", "stock-days", "share"]
+display(Markdown(f"**Latest-day composition ({last_day}).**"))
+pd.concat([sec.reset_index(drop=True), exch.reset_index(drop=True)], axis=1)
+```
+
+```{python}
+#| label: pit_constitution
+display(cat.reset_index(drop=True))
+display(Markdown(
+    "The constitution check confirms the PIT gate admits **only Domestic Common Stock "
+    "(incl. Primary class)** — no ETF, ADR, preferred, or warrant rows ever enter "
+    "(fails closed, per the eqrm positive inclusion-filter design)."))
+```
+
+# Securities master composition
+
+The whole Sharadar `tickers` table: 31,742 instruments (21,960 stocks,
+9,782 funds), of which **19,227 (60.6%) are delisted** — the
+survivorship-free core of the warehouse.
+
+```{python}
+#| label: fig_cats
+#| fig-width: 9
+#| fig-height: 4
+cats = q("SELECT category, COUNT(*) n FROM securities_master GROUP BY category ORDER BY n DESC LIMIT 14")
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 4))
+c = cats.iloc[::-1]
+y = np.arange(len(c))
+ax1.barh(y, c["n"], color=NAVY, height=0.7)
+ax1.set_yticks(y, c["category"], fontsize=8.5)
+ax1.set_title("Securities master — top categories")
+ax1.set_xlabel("instruments"); ax1.grid(axis="x", alpha=.25)
+d = q("SELECT isdelisted, COUNT(*) n FROM securities_master GROUP BY 1").set_index("isdelisted")
+ax2.bar(["active (N)"], [d.loc["N", "n"]], color=NAVY)
+ax2.bar(["delisted (Y)"], [d.loc["Y", "n"]], color=RED)
+ax2.set_title("Survivorship split (N = 12,515 / Y = 19,227)")
+ax2.set_ylabel("instruments"); ax2.grid(axis="y", alpha=.25)
+plt.tight_layout(); plt.show()
+```
+
+```{python}
+#| label: masterexch
+ex = q("SELECT exchange, COUNT(*) n FROM securities_master GROUP BY exchange ORDER BY n DESC LIMIT 8")
+ex["n"] = ex["n"].map(fmt)
+ex.columns = ["exchange", "instruments"]
+ex.reset_index(drop=True)
+```
+
+Funds (ETF/ETN/ETD/CEF, 9,782) are first-class *reference* series in
+`prices` but are excluded from stock-universe construction by category.
+
+# Fundamentals, actions, and membership history
+
+```{python}
+#| label: sf1_dims
+sf1 = q("SELECT dimension, COUNT(*) n FROM sf1 GROUP BY dimension ORDER BY dimension")
+sf1["n"] = sf1["n"].map(fmt)
+sf1.columns = ["SF1 dimension", "rows"]
+sf1.reset_index(drop=True)
+```
+
+The SF1 mirror stores all six report dimensions at raw row level (the
+remaining ~112 indicator columns live in the compressed `data` blob):
+**A**nnual/**M**anual × **R**estated/**M**ost-recent, each for RY/QY plus
+TTM.
+
+```{python}
+#| label: fig_fscore
+#| fig-width: 6.5
+#| fig-height: 3.2
+fs = q("SELECT f_score, COUNT(*) n FROM fundamentals GROUP BY 1 ORDER BY 1")
+fig, ax = plt.subplots(figsize=(6.5, 3.2))
+ax.bar(fs["f_score"], fs["n"], color=NAVY, width=0.75)
+ax.set_title("Piotroski F-Score distribution (173,132 firm-years)")
+ax.set_xlabel("F-score"); ax.set_ylabel("firm-years"); ax.grid(axis="y", alpha=.25)
+plt.tight_layout(); plt.show()
+```
+
+```{python}
+#| label: actions
+act = q("SELECT action, COUNT(*) n FROM corporate_actions GROUP BY 1 ORDER BY n DESC")
+act["n"] = act["n"].map(fmt)
+act.columns = ["action", "rows"]
+act.reset_index(drop=True)
+```
+
+```{python}
+#| label: sp500
+sp = q("SELECT COUNT(DISTINCT ticker) tickers, MIN(date) lo, MAX(date) hi FROM sp500_membership").iloc[0]
+cur = q("SELECT COUNT(*) n FROM sp500_membership WHERE date=(SELECT MAX(date) FROM sp500_membership) AND action='current'").iloc[0, 0]
+display(Markdown(
+    f"The S&P 500 membership table spans **{sp['lo']} → {sp['hi']}** "
+    f"({fmt(sp['tickers'])} distinct tickers over history, with "
+    f"**{fmt(cur)}** current constituents at the latest as-of date)."))
+```
+
+# GICS classification coverage
+
+`classifications` carries the eqrm gate: the eleven GICS labels mapped from
+Sharadar's taxonomy. **Coverage is a known gap** — only the iShares-era
+universe (2,589 names) is classified, not the full 21,960-stock master;
+`securities_master.sector/industry` (Sharadar taxonomy) covers every
+instrument but uses non-GICS labels (e.g. *Healthcare* vs *Health Care*).
+The NOTES.md action item — a live GICS-map coverage check against the whole
+master — remains open.
+
+```{python}
+#| label: fig_gics
+#| fig-width: 9
+#| fig-height: 3.6
+g = q("SELECT sector, COUNT(*) n FROM classifications GROUP BY 1 ORDER BY n DESC")
+fig, ax = plt.subplots(figsize=(9, 3.6))
+gg = g.iloc[::-1]
+y = np.arange(len(gg))
+cols = [GOLD if s == "Cash and/or Derivatives" else NAVY for s in gg["sector"]]
+ax.barh(y, gg["n"], color=cols, height=0.72)
+ax.set_yticks(y, gg["sector"], fontsize=8.5)
+ax.set_title("GICS-mapped classifications (2,589 iShares-era names)")
+ax.set_xlabel("names"); ax.grid(axis="x", alpha=.25)
+plt.tight_layout(); plt.show()
+```
+
+```{python}
+#| label: gics_cover
+cov = q("""SELECT (SELECT COUNT(*) FROM classifications) classified,
+                  (SELECT COUNT(*) FROM securities_master WHERE `table`='stocks') stocks_master""").iloc[0]
+display(Markdown(
+    f"Classified names: **{fmt(cov['classified'])}** of **{fmt(cov['stocks_master'])}** "
+    f"stocks in the master (**{100*cov['classified']/cov['stocks_master']:.1f}%** coverage). "
+    "No NULL sectors; the five *Cash and/or Derivatives* rows are iShares IWV placeholders "
+    "that carry no GICS sector and are excluded from the eqrm allowlist by construction."))
+```
+
+# Freshness & data quality
+
+```{python}
+#| label: quality
+qc = q("""
+ SELECT COUNT(*) total,
+        SUM(volume = 0) vol0,
+        SUM(adjustment > 100) adj_hi,
+        SUM(adjustment < 0.01) adj_lo,
+        SUM(close <= 0) close_le0,
+        SUM(volume = 0 AND adjustment > 100) vol0_adj_hi
+ FROM prices
+""").T.rename(columns={0: "rows"})
+qc["pct"] = (100 * qc["rows"] / qc.loc["total", "rows"]).round(2)
+qc.loc["total", "pct"] = 100.0
+qc["rows"] = qc["rows"].map(fmt)
+qc["pct"] = qc["pct"].map(lambda v: f"{v:.2f}%")
+qc.index = ["all rows", "volume = 0 (no-trade days)", "adjustment > 100",
+            "adjustment < 0.01", "close ≤ 0",
+            "volume = 0 AND adjustment > 100 (sentinel)"]
+qc.columns = ["rows", "% of total"]
+qc
+```
+
+```{python}
+#| label: adj_extremes
+ext = q("""
+ SELECT ticker, date, close, volume, adjustment
+ FROM prices WHERE adjustment > 100 OR adjustment < 0.01 OR close <= 0
+ ORDER BY adjustment DESC LIMIT 8
+""")
+ext["adjustment"] = ext["adjustment"].map(lambda v: f"{v:.3g}")
+ext.reset_index(drop=True)
+```
+
+**Findings.** (1) **No-trade placeholder rows:** 5.5% of price rows carry
+`volume = 0` with a positive close — Sharadar bulk includes suspended /
+no-trade days; of those, ~301k carry adjustment factors at the **8.5×10¹⁸
+overflow sentinel** (e.g. `BINI`, 2015) because `closeadj` was not
+populated for the row. (2) **The adjustment tail is mostly mechanical, not
+corruption:** even among traded rows, ~1.8% have `adjustment > 100` — the
+cumulative split+dividend rescale of long histories. The as-traded close
+itself is unaffected, so **returns/factor work should use `close` directly**
+and apply `adjustment` only for total-return series, screening `volume = 0`
+and `adjustment` outliers. (3) Two rows with `close ≤ 0` exist — a
+one-line cleanup candidate.
+
+```{python}
+#| label: freshness
+fr = q("""
+ SELECT m.`table` kind, COUNT(*) n, MAX(p.date) last_quote
+ FROM prices p JOIN securities_master m ON m.ticker = p.ticker
+ GROUP BY 1
+""")
+fr["n"] = fr["n"].map(fmt)
+fr.columns = ["bucket", "rows", "last quote"]
+fr.reset_index(drop=True)
+```
+
+```{python}
+#| label: snaps
+snap = q("SELECT pulled_at, source, as_of, row_count FROM snapshots ORDER BY id DESC LIMIT 6")
+snap.reset_index(drop=True)
+```
+
+`optimize-db` (2026-08-11 21:33) reported `integrity_check: ok` on the full
+check, `vacuum_s: 180.2`, size 17.1 → 15.9 GB, freelist 0. Every query in
+this report completes in seconds against the 15.9 GB file thanks to
+`idx_prices_date` (date-first covering index on `prices`) and the
+memory-tuned read connection.

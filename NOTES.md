@@ -245,3 +245,20 @@ correct order / no deletes at all).
   so a from-zero rebuild yields the optimized DB automatically.
 - db.connect() now sets synchronous=NORMAL, journal_size_limit=512MB,
   cache_size=256MB, temp_store=MEMORY, mmap_size=128MB.
+
+## Reporting (Quarto)
+
+- `report/data.qmd` -> `quarto render report/data.qmd` -> self-contained
+  `report/data.html`: coverage/depth/PIT/quality report read directly from
+  `data_manager.db` (kernel `data-manager` = this repo's venv; dev deps
+  pandas/numpy/matplotlib/ipykernel).
+- Gotcha (learned 2026-08-11): Quarto's jupyter engine executes with cwd =
+  the qmd's directory; resolve repo-root paths by walking up until `src/`
+  exists, and locate `report.mplstyle` relative to cwd OR `BASE/report`.
+  `matplotlib.use("Agg")` after pyplot import also kills figure emission.
+- Quality facts surfaced by the first report: 5.5% of price rows are
+  volume=0 no-trade days (~301k carry the 8.5e18 adjustment sentinel);
+  ~1.8% of traded rows have adjustment>100 (mechanical split/dividend
+  tail; use as-traded close for returns); 2 rows have close<=0; GICS
+  classifications cover only 2,589 of 21,960 stocks (live coverage check
+  still open).
