@@ -1,0 +1,174 @@
+# AGENTS.md — data-manager (agent guide)
+
+Operational guide for any agent (or engineer) that reads from, or maintains,
+this database. Human-oriented narrative lives in `NOTES.md` and in
+`report/data.qmd` (rendered to `report/data.html`). This file is the
+standalone, facts-only contract.
+
+## What this is
+
+`~/.prime/agent/data_manager.db` — a single SQLite (WAL) file, the
+point-in-time market-data warehouse for the quant stack:
+61.7M as-traded daily price rows (stocks + funds, 1998 → now,
+survivorship-free), a 3.15M-row SF1 fundamentals mirror (6 reporting
+dimensions), the full Sharadar securities master (31,742 instruments, 19,227
+delisted), corporate actions (672k rows), metrics, S&P500 membership history,
+and the locally built PIT universe (`universe_pit`, 13.46M stock-days over
+7,187 trading days).
+
+Raw tables come from Sharadar **bulk-download zips** (full history, no
+per-ticker API calls); derived tables are rebuilt locally with zero requests.
+**This repo is independent: never assume or reference other projects'
+conventions here; names like the factor model in risk-model are separate
+projects and must not be mentioned in this repo's docs/code.**
+
+## Connection patterns
+
+In-repo code (jobs/builds):
+```python
+from data_manager import db
+conn = db.connect()            # WAL, busy_timeout, tuned pragmas, schema ensured
+```
+Downstream read-only consumers (reports, notebooks, agents):
+```python
+import sqlite3, pathlib
+db_path = pathlib.Path.home() / ".prime" / "agent" / "data_manager.db"
+conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+conn.execute("PRAGMA cache_size=-65536")     # 256MB page cache
+conn.execute("PRAGMA mmap_size=134217728")   # 128MB mmap
+conn.execute("PRAGMA busy_timeout=20000")
+```
+Rules: **never write from a downstream consumer**; WAL allows concurrent
+readers. Dates are TEXT `YYYY-MM-DD` everywhere — lexicographic comparison is
+date comparison. Keys: `prices(ticker,date)`, `sf1(ticker,dimension,
+reportperiod)`, `universe_pit(as_of,ticker)`, `securities_master(
+permaticker)` — **join master on `ticker`, not `permaticker`**.
+
+## Tables
+
+| table | origin | key | contents |
+|---|---|---|---|
+| prices | raw (stocks+funds zips) | (ticker,date) | as-traded OHLCV + `adjustment` |
+| sf1 | raw (fundamentals zip) | (ticker,dimension,reportperiod) | 29 typed cols + full row in `data` blob |
+| securities_master | raw (tickers zip) | permaticker | instrument roster; `table`=stocks/funds; sector/industry (Sharadar taxonomy) |
+| corporate_actions | raw (actions zip) | (ticker,date,action) | splits, dividends, delisted, tickerchanges, bankruptcyliquidation |
+| metrics | raw (metrics zip) | (ticker,as_of) | snapshot stats (betas, MA, 52w, returns, div yields) |
+| sp500_membership | raw (API) | (ticker,date) | S&P membership history 1957→now |
+| fundamentals | derived (sf1 ARY) | (ticker,fiscal_year) | Piotroski F-Score + 9 components |
+| quarterly_statements | derived (sf1 ARQ) | (ticker,period) | 13-col quarterly mirror |
+| ratios | derived (sf1 MRY latest) | ticker | valuation/quality snapshot (forward_pe & beta always NULL — SF1 lacks them) |
+| classifications | derived (GICS map) | ticker | 11 GICS labels — covers only 2,589 iShares-era names (known gap) |
+| universe | derived (iShares IWV) | ticker | legacy R3000 snapshot (superseded by universe_pit) |
+| universe_pit | derived (master+prices+sf1) | (as_of,ticker) | investable membership per trading day |
+| snapshots | ledger | id | per-pull record (source, pulled_at, as_of, row_count) |
+
+## Prices: the adjustment contract (critical)
+
+* `close` is the **as-traded** price (it gaps at stock splits).
+* `adjustment = closeadj / closeunadj` (split+dividend total-return factor);
+  `adjusted = raw × adjustment`. For OHLC: `open/high/low` are stored
+  *as-traded* too; multiply any of them by `adjustment` for the adjusted
+  basis. Volume stays as traded.
+* **For returns / factors use `close` directly.** Apply `adjustment` only
+  for total-return series, and screen: `volume = 0` (5.5% of rows are
+  no-trade days) and `adjustment` outliers (`>100` or `<0.01`; ~301k rows
+  carry the 8.5e18 sentinel on no-trade days).
+* Convenience accessor: `adjusted_prices(ticker, start=None, end=None)` in
+  `data_manager.universe` → dicts with `date/open/high/low/close/volume/
+  adjustment/adjusted_open.../adjusted_close`.
+* Inner joins vs master: `securities_master.table` splits stocks (21,960)
+  vs funds (9,782); funds are reference series only.
+
+## SF1: dimensions, dates, the blob
+
+* Dimensions: `AR*` = **As-Reported** (no restatements; `date` ≈ SEC filing
+  date → use `date <= D` for point-in-time), `MR*` = **Most-Recent
+  Reported** (includes restatements, indexed to report period). Suffix
+  `Y` annual, `Q` quarterly, `T` TTM. All six dims exist on the bulk file
+  (ART/MRT too — the API serves none).
+* Row fields: `date` = date key (as-of); `calendardate` = period calendar
+  date; `reportperiod` = fiscal period end; `fiscalperiod` = e.g. `2025-FY`.
+* **`data` blob**: the full vendor row (105 indicator fields beyond the
+  metadata) was stored compressed. Plain SQL cannot see inside it:
+  ```python
+  import json, zlib
+  blob = conn.execute(
+      "SELECT data FROM sf1 WHERE ticker=? AND dimension=? AND reportperiod=?",
+      ("AAPL", "ARY", "2025-09-30")).fetchone()[0]
+  row = json.loads(zlib.decompress(blob).decode("utf-8"))
+  row["revenue"]   # any of the 105 fields
+  ```
+  The 29 typed columns mirror the most-used fields (revenue, netinc, assets,
+  equity, ncfo, capex, fcf, marketcap, ev, pe, pb, ps, eps, dps, divyield,
+  roe, roa, roic, grossmargin, netmargin, ebitda, shareswa, shareswadil,
+  currentratio, de, price, cashneq, liabilities). `_hydrate_sf1(conn,
+  ticker, dimension)` does the decompress loop privately.
+* PIT market cap: `close × shareswa` (ARQ/ARY ≤ date). Banks' `grossmargin`
+  ≈ 1.0 and `fcf` structurally negative — expected artifacts.
+
+## universe_pit semantics (read this twice)
+
+One row per (trading day, member). Membership iff, **as of that day**:
+Domestic Common Stock (Primary/Second class), as-traded close ≥ $2, trailing
+20-session avg $volume ≥ $5M (≥10 sessions), PIT mcap ≥ $300M, quote ≤ 10
+calendar days old. The stored `price/mcap/dvol_avg/dvol_days` is the **most
+recent valid quote ≤ that day** (fixed 2026-08-12 — a continuous name must
+carry today's profile, not its 1998 one; regression-tested). Index:
+`idx_pit_asof` — always filter by `as_of` first; do not aggregate thousands
+of members across all days without the as_of predicate.
+
+## Gotchas that bite
+
+1. `securities_master` PK is **permaticker**; ticker is unique in practice.
+2. Master `ticker` is the **last/current** symbol (Lehman is `LEHMQ` even
+   for its NYSE era; the historical `LEH` symbol is only in
+   `corporate_actions` ticker-change rows).
+3. `classifications` (GICS) covers only the 2,589 iShares-era names —
+   master `sector/industry` (Sharadar taxonomy, e.g. "Healthcare") is the
+   full-coverage alternative and must not be labeled GICS.
+4. `metrics` is snapshots-only and uneven (dead stocks have one row at
+   delisting; some fields are artifacts — verify before use).
+5. `ratios.forward_pe` and `beta` are always NULL (SF1 does not provide).
+6. 2 price rows have `close ≤ 0`; ~5.5% have `volume = 0`; screen both.
+7. `bulk_update` reloads full-history zips with INSERT OR REPLACE — do not
+   run writers concurrently with it; keep read-only connections.
+8. Report rendering: `quarto render report/data.qmd` from the repo root
+   (jupyter kernel `data-manager` = this repo's venv). Never put `eqrm` or
+   other projects' names in docs/reports/code here.
+
+## Keeping the database updated (hygiene)
+
+1. `uv run data-manager status` — baseline row counts (also `snapshots` for
+   the pull ledger).
+2. `uv run data-manager bulk-update` — syncs each table's zip against the
+   server's `modified` stamp (`~/.prime/agent/bulk/_manifest.json`),
+   re-downloads only changed files (~2 GB/day worst case), reloads those
+   tables (prices full reload ≈ 12 min), re-derives piotroski/quarterly/
+   ratios, rebuilds `universe_pit --history` (≈ 12 min). Log: `logs/`.
+3. `uv run data-manager optimize-db --backup <path>` — consistent backup,
+   checkpoint, ANALYZE, `quick_check`, VACUUM (~3 min). Run after every
+   update; keep one backup per full rebuild (DB ≈ 16 GB).
+4. Verify after every update:
+   * `status` counts vs the previous baseline (no table should shrink).
+   * `SELECT MAX(date) FROM prices` and `MAX(as_of) FROM universe_pit`
+     moved forward together.
+   * Spot check a well-known name (AAPL last close sane; 2026 profile
+     ≈ live price, 1998-01-14 ≈ $19.75 — the fixed-profile fingerprint).
+   * `uv run pytest -q` (86 tests, incl. the PIT profile regression).
+5. Cadence: the bulk zips are daily; a morning `bulk-update` + `optimize-db`
+   keeps the warehouse current. `bulk-fromzero` is the full rebuild path
+   (downloads everything, wipes, loads, derives, PIT, optimizes).
+6. Logs/scripts: `logs/*.log`, `run_pit_history.sh`, `run_optimize.sh`,
+   `measure_perf.sh` (query-latency smoke).
+
+## Read paths by task
+
+| task | pattern |
+|---|---|
+| daily bar / returns | `SELECT date,close,volume,adjustment FROM prices WHERE ticker=? [AND date>=?]` |
+| total-return series | as above, compute `close*adjustment` yourself (accessor: `adjusted_prices`) |
+| cross-section on date D | `SELECT * FROM prices WHERE date=?` (uses `idx_prices_date`) |
+| PIT shares/mcap for (t,D) | `SELECT shareswa FROM sf1 WHERE ticker=? AND dimension IN ('ARQ','ARY') AND date<=? ORDER BY date DESC LIMIT 1` |
+| investable members on D | `SELECT * FROM universe_pit WHERE as_of=?` (uses `idx_pit_asof`) |
+| fundamentals history | `SELECT * FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod` (+ `data` blob for untyped fields) |
+| delisting evidence | `corporate_actions` rows `action IN ('delisted','bankruptcyliquidation')` |

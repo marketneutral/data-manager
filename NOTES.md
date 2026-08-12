@@ -30,7 +30,7 @@
 ## GICS sector mapping (providers/sharadar.py::SHARADAR_TO_GICS)
 
 Sharadar's own taxonomy -> 11 GICS labels. Unmapped labels -> None (fails
-closed; excluded from the eqrm stock factor universe). Verify against live
+closed; excluded from the stock factor universe). Verify against live
 sector values periodically. AAPL: Technology -> Information Technology.
 
 ## Pipeline (fresh build, sequential; ~15-20k requests on the paid key)
@@ -58,11 +58,11 @@ Notes:
 - Watch: SF1 lacks forward_pe/beta (stored NULL); sector map needs a live
   coverage check after the master pull.
 
-## eqrm/risk-model (next)
+## Downstream consumers (next)
 
-Point eqrm consumers at the migrated tables; re-run risk-model data-quality
-checks (inclusion filter universe count should grow toward ~3,000 with delisted
-names excluded by construction). Only THEN consider cancelling anything Sharadar.
+Point downstream consumers at the migrated tables; re-run data-quality checks
+(inclusion-filter universe count should grow toward ~3,000 with delisted names
+excluded by construction). Only THEN consider cancelling anything Sharadar.
 
 ## WAREHOUSE MODE — ALL US equities PIT (2026-08-11)
 
@@ -133,7 +133,7 @@ Defaults are Russell-styled; re-run with different thresholds to compare.
 ## GICS sector mapping (providers/sharadar.py::SHARADAR_TO_GICS)
 
 Sharadar's own taxonomy -> 11 GICS labels. Unmapped labels -> None (fails
-closed; excluded from the eqrm stock factor universe). Verify against live
+closed; excluded from the stock factor universe). Verify against live
 sector values periodically. AAPL: Technology -> Information Technology.
 
 ## Pipeline (fresh build, sequential; ~15-20k requests on the paid key)
@@ -161,11 +161,11 @@ Notes:
 - Watch: SF1 lacks forward_pe/beta (stored NULL); sector map needs a live
   coverage check after the master pull.
 
-## eqrm/risk-model (next)
+## Downstream consumers (next)
 
-Point eqrm consumers at the migrated tables; re-run risk-model data-quality
-checks (inclusion filter universe count should grow toward ~3,000 with delisted
-names excluded by construction). Only THEN consider cancelling anything Sharadar.
+Point downstream consumers at the migrated tables; re-run data-quality checks
+(inclusion-filter universe count should grow toward ~3,000 with delisted names
+excluded by construction). Only THEN consider cancelling anything Sharadar.
 
 ## WAREHOUSE MODE — ALL US equities PIT (2026-08-11)
 
@@ -291,3 +291,22 @@ correct order / no deletes at all).
   sheets for mega/mid/small (picked dynamically), GICS gap, freshness/quality.
 - Palette retired navy/gold -> graphite ink + burnt-orange + sage + slate
   (custom.scss $primary #c8502d; report.mplstyle).
+
+## AGENTS.md + report v3 (2026-08-12)
+
+- AGENTS.md at repo root = canonical AGENT-facing guide: connection
+  patterns (read-only URI), table contract, prices.adjustment semantics,
+  SF1 dimensions + `data` blob access, universe_pit semantics, gotchas,
+  update hygiene, read-paths-by-task table. The .qmd report links to it.
+- data.qmd: blob clarified (§4 with a working decompress snippet); new §10
+  "Accessing the data (SQL & accessor API)" (adjusted_prices, db.connect,
+  plain read-only SQL patterns, condensed gotchas) and §11 "Database
+  hygiene" (status -> bulk-update -> optimize-db, cadence, executable
+  verification checklist cell); appendix holds the full 112-field SF1
+  dictionary (105 indicators + 7 key fields, all rows shown).
+- All figures are vertically stacked and width-capped (8.5in) for zero
+  horizontal scroll; ipykernel InlineBackend.print_figure_kwargs overridden
+  to {} (its default bbox_inches='tight' re-cropped every figure and made
+  long-title figures overflow).
+- eqrm references purged repo-wide (README, NOTES, archive, report,
+  code-comments) — other projects are never named in this repo.

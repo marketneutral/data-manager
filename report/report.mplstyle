@@ -1,11 +1,9 @@
-# eqrm/data-manager report figure style
+# data-manager report figure style
 font.family: serif
 font.size: 10
 axes.titlesize: 10.5
 axes.labelsize: 9.5
-axes.edgecolor: #333333
 axes.linewidth: 0.7
 grid.alpha: 0.25
 figure.facecolor: white
 axes.facecolor: white
-savefig.bbox: tight

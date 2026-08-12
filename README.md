@@ -108,8 +108,7 @@ per-day factor (splits + dividends). **Adjust at query time:**
 raw × adjustment`. Volume stays as traded.
 
 ### `classifications` (PK: ticker)
-sector (mapped to 11 GICS labels; unmapped -> NULL = fails closed for the eqrm
-inclusion filter), industry, as_of.
+sector (mapped to 11 GICS labels; unmapped -> NULL = fails closed for the stock-factor inclusion filter), industry, as_of.
 
 ### `fundamentals` — Piotroski F-Score (PK: ticker, fiscal_year)
 roa, cfo, d_roa, accruals, d_leverage, d_liquidity, equity_issuance,
