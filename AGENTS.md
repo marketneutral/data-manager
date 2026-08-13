@@ -174,7 +174,9 @@ WHERE table_name = 'SF1' AND indicator = 'revenue';
   `date` as `datekey` for caller compatibility). Do NOT re-introduce a
   blob/lite-column split — this is a storage/query project: serve the
   vendor schema as-is.
-* PIT market cap: `close × shareswa` (ARQ/ARY ≤ date). Banks' `grossmargin`
+* PIT market cap: `close × shareswa` (ARQ/ARY ≤ date).
+* **DO NOT use the SF1 `price` column as an as-traded price / factor.** It is **split-adjusted to forward time**: adjusted for splits/reverse-splits that occur *after* the point-in-time date (e.g. AAPL SF1`price`=106.26 for a period whose genuine traded price was ~$425, i.e. ÷4:1 split that came later; reverse-split penny stocks are distorted by factors 10^9-10^17). Using it to sort/rank cross-sectionally leaks future info (look-ahead) and mis-ranks stocks on true 'cheapness'. For a genuine price-level factor use `prices.close` (as-traded) at the rebalance date; keep `close × adjustment` for *returns* only. Do NOT drop the column (keep the 112-field vendor schema) — just stop using it.
+ Banks' `grossmargin`
   ≈ 1.0 and `fcf` structurally negative — expected artifacts.
 
 ## French factor returns (`french_factors`)
