@@ -227,3 +227,26 @@ by every `bulk-update`/`bulk-fromzero` pass.
 See **`NOTES.md`** for the current state and operational notes. The full FMP-era
 history (provider code, docs, logs, pre-wipe database) is archived under
 **`archive/fmp-era/`**.
+
+
+## Versioning & provenance (this project)
+
+How versioning is handled at the *data* layer.
+
+- **Raw data is immutable and append-only.** Prices, fundamentals, ratios,
+  securities master, corporate actions, membership, and factor data are never
+  overwritten or dropped by a refresh; updates only add/fix rows and the
+  point-in-time (`as-of`) dimension is always preserved so any cut of history
+  can be reconstructed.
+- **The database never loses data; it may only gain tables.** New capabilities
+  are introduced as *additional* tables, never by altering or dropping existing
+  ones.
+- **A small build-registry lives here** (as new tables only): it records which
+  model/portfolio build versions were produced against which data as-of cut, so
+  every downstream artifact can be attributed to a specific point-in-time data
+  state. The exact registry schema and the meaning of each version field are
+  governed by the shared **contract**; this project does not implement or name
+  the downstream consumers — it only hosts the shared record of what data was
+  present when.
+- When a downstream model is rebuilt, it references the data as-of cut (not a
+  moving "latest"), which is what makes results reproducible across time.
