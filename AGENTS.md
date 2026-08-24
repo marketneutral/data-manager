@@ -220,10 +220,11 @@ tickers). Key = (ticker, filingdate, formtype, ownername, rownum). Raw from the
 Sharadar `insiders.csv.zip` bulk file.
 
 * **`filingdate`** = the SEC filing date (source column `date`); **`transactiondate`**
-  is the actual trade date (≈ the event) — file date famously lags trade date by
-  up to ~6 weeks, so for point-in-time signal use `transactiondate`. Canonical
-  `formtype` = `3` (initial), `4` (changes), `5` (annual); prefixed `RESTATED `
-  for re-filings.
+  is the actual trade date (≈ the event). File date lags trade date (median 2 days,
+  tail to years) — a *look-ahead-free* point-in-time signal must filter on
+  `filingdate <= decision date`, NOT `transactiondate` (see "SF2 PIT & splits" below).
+  Canonical `formtype` = `3` (initial), `4` (changes), `5` (annual); prefixed
+  `RESTATED ` for re-filings.
 * **`transactionshares` is signed**: positive = acquisition, negative = disposition
   (e.g. `-1439` = sold 1,439). `transactioncode` is the SEC code — `P` open-market
   purchase, `S` open-market sale, plus `A/D/M/X/C/F/G/J/V/W` (grants, gifts, expiry,
@@ -241,38 +242,31 @@ Sharadar `insiders.csv.zip` bulk file.
   (e.g. a daily `--tables insiders`) is idempotent. `descriptions` (table_name
   `SF2`) holds the authoritative column dictionary.
 
-### `insider_transactions` — RAW (insiders zip; Sharadar SF2, SEC Form 3/4/5)
+### SF2 PIT & splits (verified empirically 2026-08-22)
 
-One row per filing line: SEC insider transactions — the filer's name and role, buy /
-sell, share counts, price, and value. KEY = `(ticker, filingdate, formtype,
-ownername, rownum)`. Column definitions are the vendor's own, mirrored into the
-`descriptions` table (`table_name = 'SF2'`). Notes: source `date` is stored as
-`filingdate`; `transactionshares` is signed (+ acquisition / − disposition);
-`transactionvalue` is USD (the dictionary's "millions" wording is unreliable);
+**SF2 is point-in-time clean: price, share counts, and value are all in the
+as-traded frame at the transaction date — NOT split-adjusted backwards.**
+Verified on names with later forward splits: every pre-split trade reports the
+*as-traded* price and *as-traded* share counts that day (AAPL 2011 ≈ $340 not
+~$12 after 7:1(2014)×4:1(2020); AMZN ≈ $189 not $9.5 after 20:1; NVDA ≈ $22 not
+$2.2 after 10:1; GOOGL ≈ $604 not $30 after 20:1; TSLA ≈ $23 not $1.5 after
+5:1/3:1), and on every sampled pre-split row `transactionpricepershare ×
+transactionshares == transactionvalue` exactly, so the **share counts are
+as-traded too**, not post-split. P/S price/close ≈ 1.0 confirms the price equals
+the as-traded close on the trade date. Do **not** mix these share counts with the
+SF1 back-adjusted `price` column (which IS adjusted forward and leaks future
+splits) — use `prices.close` (as-traded) at the decision date for any
+$-denominated magnitude.
 
-| column | type | meaning |
-|---|---|---|
-| ticker | TEXT | security (join master on `ticker`) |
-| filingdate | TEXT | SEC filing date (source `date`) |
-| formtype | TEXT | 3 / 4 / 5, optionally `RESTATED ` |
-| ownername | TEXT | filer / owner name |
-| rownum | REAL | line number within the filing (key) |
-| officertitle | TEXT | semicolon role list (CEO, CFO, ...) |
-| isdirector / isofficer / istenpercentowner | TEXT | Y / N roles |
-| transactiondate | TEXT | trade date (the event; lags filing) |
-| securityadcode | TEXT | N/ND/NA/D/DD/DA (non-derivative vs derivative, acq/disp) |
-| transactioncode | TEXT | SEC code P (buy) / S (sell) / A/D/M/X/C/F/G/J/V/W |
-| sharesownedbeforetransaction | REAL | holdings before the trade |
-| transactionshares | REAL | signed share count (+buy / −sell) |
-| sharesownedfollowingtransaction | REAL | holdings after the trade |
-| transactionpricepershare | REAL | USD/share |
-| transactionvalue | REAL | USD trade value |
-| securitytitle | TEXT | class code (`Com`, `Com;ClA`, ...) |
-| directorindirect | TEXT | D / I ownership (blank ≠ direct — see AGENTS) |
-| natureofownership | TEXT | trust / fund vehicle when indirect |
-| dateexercisable / priceexercisable / expirationdate | TEXT/REAL/TEXT | option fields (forms 3/4/5 derivatives) |
+**PIT timing:** a trade is knowable to you only once it is **filed**; filter
+`filingdate <= decision_date` (not `transactiondate`) to avoid look-ahead. Median
+trade→filing lag 2 days (63% ≤2d, p90 4d, p99 115d), tail to years. `RESTATED`
+(272k rows) are re-filings that get separate key rows — dedup on `filingdate` is
+naive; take latest per (ticker, transactiondate, ownername, rownum,
+formtype-base). `ticker` is the current/last symbol (match `securities_master`
+on `ticker`). `transactionvalue` is USD.
 
-### `prices` — RAW (stocks+funds zips)## universe_pit semantics (read this twice)
+## universe_pit semantics (read this twice)
 
 One row per (trading day, member). Membership iff, **as of that day**:
 Domestic Common Stock (Primary/Second class), as-traded close ≥ $2, trailing
