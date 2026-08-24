@@ -14,6 +14,7 @@ TABLES = {
     "fundamentals",
     "descriptions",
     "french_factors",
+    "insider_transactions",
 }
 
 
@@ -32,6 +33,30 @@ def test_load_descriptions_stores_rows(conn, tmp_path):
     rows = conn.execute(
         "SELECT table_name, indicator, title FROM descriptions ORDER BY indicator").fetchall()
     assert {r["title"] for r in rows} == {"Revenues", "Close Price - Split Adjusted"}
+
+
+def test_load_insiders_stores_rows(conn, tmp_path):
+    """The SF2 insider-transactions loader mirrors rows into the warehouse."""
+    import io, zipfile
+    from data_manager import bulkload
+    csv_ = ("ticker,date,formtype,ownername,rownum,officertitle,isdirector,"
+            "isofficer,istenpercentowner,transactiondate,securityadcode,"
+            "transactioncode,sharesownedbeforetransaction,transactionshares,"
+            "sharesownedfollowingtransaction,transactionpricepershare,"
+            "transactionvalue,securitytitle,directorindirect,natureofownership,"
+            "dateexercisable,priceexercisable,expirationdate\n"
+            "AAPL,2026-08-20,4,NEWSTEAD JENNIFER,1,Sec;SVP,N,Y,N,2026-08-18,"
+            "ND,S,40107,-1439,38668,307.49,442478,Com,D,,,,\n")
+    p = tmp_path / "insiders.csv.zip"
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("insiders.csv", csv_)
+    n = bulkload.load_insiders(str(p), conn)
+    assert n == 1
+    row = conn.execute("SELECT * FROM insider_transactions").fetchone()
+    assert row["filingdate"] == "2026-08-20"       # source 'date' -> filingdate
+    assert row["transactiondate"] == "2026-08-18"
+    assert row["transactionshares"] == -1439        # signed: net sale
+    assert row["transactionpricepershare"] == 307.49
 
 
 def test_connect_creates_all_tables(db_path):

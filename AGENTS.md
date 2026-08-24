@@ -13,8 +13,8 @@ point-in-time market-data warehouse for the quant stack:
 survivorship-free), a 3.15M-row SF1 fundamentals mirror (6 reporting
 dimensions), the full Sharadar securities master (31,742 instruments, 19,227
 delisted), corporate actions (672k rows), metrics, S&P500 membership history,
-and the locally built PIT universe (`universe_pit`, 13.46M stock-days over
-7,187 trading days).
+insider transactions (SF2, `insider_transactions`), and the locally built PIT
+universe (`universe_pit`, 13.46M stock-days over 7,187 trading days).
 
 Raw tables come from Sharadar **bulk-download zips** (full history, no
 per-ticker API calls); derived tables are rebuilt locally with zero requests.
@@ -55,6 +55,7 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | metrics | raw (metrics zip) | (ticker,as_of) | snapshot stats (betas, MA, 52w, returns, div yields) |
 | sp500_membership | raw (API) | (ticker,date) | S&P membership history 1957→now |
 | french_factors | raw (Ken French Data Library) | date | daily US factor returns in % (percent/day): Mkt-RF, SMB, HML, RMW, CMA, Mom, ST_Rev, LT_Rev, RF |
+| insider_transactions | raw (insiders zip, SF2) | (ticker,filingdate,formtype,ownername,rownum) | SEC insider Form 3/4/5 filings (owner, role, buy/sell, shares, price, value). Column defs in `descriptions` (table_name `SF2`). `date` stored as `filingdate`; `transactionshares` signed (+buy/−sell) |
 | fundamentals | derived (sf1 ARY) | (ticker,fiscal_year) | Piotroski F-Score + 9 components |
 | quarterly_statements | derived (sf1 ARQ) | (ticker,period) | 13-col quarterly mirror |
 | ratios | derived (sf1 MRY latest) | ticker | valuation/quality snapshot (forward_pe & beta always NULL — SF1 lacks them) |
@@ -212,7 +213,66 @@ raw table in the warehouse):
   refresh it automatically; French loads never trigger the SF1
   derivations/PIT.
 
-## universe_pit semantics (read this twice)
+## SF2: insider transactions (`insider_transactions`) semantics
+
+One row per SEC insider filing line, 2008-01-02 → present (11.5M rows, 12k
+tickers). Key = (ticker, filingdate, formtype, ownername, rownum). Raw from the
+Sharadar `insiders.csv.zip` bulk file.
+
+* **`filingdate`** = the SEC filing date (source column `date`); **`transactiondate`**
+  is the actual trade date (≈ the event) — file date famously lags trade date by
+  up to ~6 weeks, so for point-in-time signal use `transactiondate`. Canonical
+  `formtype` = `3` (initial), `4` (changes), `5` (annual); prefixed `RESTATED `
+  for re-filings.
+* **`transactionshares` is signed**: positive = acquisition, negative = disposition
+  (e.g. `-1439` = sold 1,439). `transactioncode` is the SEC code — `P` open-market
+  purchase, `S` open-market sale, plus `A/D/M/X/C/F/G/J/V/W` (grants, gifts, expiry,
+  derivative exercises...). `securityadcode` (`NA/ND/DA/DD/N/D`) splits
+  non-derivative vs derivative and acquisition vs disposition.
+* **`transactionvalue`** is the trade value **in USD** (e.g. 442478 = \$442,478) for
+  most rows, despite the dictionary's "millions" wording — treat it as raw dollars and
+  verify before dividing. `sharesownedbefore/followingtransaction` are the owner's
+  recorded holdings around the trade (often blank on old rows).
+* **Roles**: `officertitle` (semi-colon role list), `isdirector/isofficer/
+  istenpercentowner` (Y/N), `directorindirect` (D/I). **Never assume a blank
+  `directorindirect` = direct** — check `natureofownership` (trust/fund vehicle)
+  before flagging indirect ownership.
+* Duplicate protection: `INSERT OR REPLACE` on the full key, so re-running a load
+  (e.g. a daily `--tables insiders`) is idempotent. `descriptions` (table_name
+  `SF2`) holds the authoritative column dictionary.
+
+### `insider_transactions` — RAW (insiders zip; Sharadar SF2, SEC Form 3/4/5)
+
+One row per filing line: SEC insider transactions — the filer's name and role, buy /
+sell, share counts, price, and value. KEY = `(ticker, filingdate, formtype,
+ownername, rownum)`. Column definitions are the vendor's own, mirrored into the
+`descriptions` table (`table_name = 'SF2'`). Notes: source `date` is stored as
+`filingdate`; `transactionshares` is signed (+ acquisition / − disposition);
+`transactionvalue` is USD (the dictionary's "millions" wording is unreliable);
+
+| column | type | meaning |
+|---|---|---|
+| ticker | TEXT | security (join master on `ticker`) |
+| filingdate | TEXT | SEC filing date (source `date`) |
+| formtype | TEXT | 3 / 4 / 5, optionally `RESTATED ` |
+| ownername | TEXT | filer / owner name |
+| rownum | REAL | line number within the filing (key) |
+| officertitle | TEXT | semicolon role list (CEO, CFO, ...) |
+| isdirector / isofficer / istenpercentowner | TEXT | Y / N roles |
+| transactiondate | TEXT | trade date (the event; lags filing) |
+| securityadcode | TEXT | N/ND/NA/D/DD/DA (non-derivative vs derivative, acq/disp) |
+| transactioncode | TEXT | SEC code P (buy) / S (sell) / A/D/M/X/C/F/G/J/V/W |
+| sharesownedbeforetransaction | REAL | holdings before the trade |
+| transactionshares | REAL | signed share count (+buy / −sell) |
+| sharesownedfollowingtransaction | REAL | holdings after the trade |
+| transactionpricepershare | REAL | USD/share |
+| transactionvalue | REAL | USD trade value |
+| securitytitle | TEXT | class code (`Com`, `Com;ClA`, ...) |
+| directorindirect | TEXT | D / I ownership (blank ≠ direct — see AGENTS) |
+| natureofownership | TEXT | trust / fund vehicle when indirect |
+| dateexercisable / priceexercisable / expirationdate | TEXT/REAL/TEXT | option fields (forms 3/4/5 derivatives) |
+
+### `prices` — RAW (stocks+funds zips)## universe_pit semantics (read this twice)
 
 One row per (trading day, member). Membership iff, **as of that day**:
 Domestic Common Stock (Primary/Second class), as-traded close ≥ $2, trailing
@@ -238,6 +298,9 @@ of members across all days without the as_of predicate.
 6. 2 price rows have `close ≤ 0`; ~5.5% have `volume = 0`; screen both.
 7. `bulk_update` reloads full-history zips with INSERT OR REPLACE — do not
    run writers concurrently with it; keep read-only connections.
+8. `insiders` (SF2) is part of the default `bulk-update` set but never
+   triggers the piotroski/quarterly/ratios/PIT rebuilds (it feeds nothing);
+   add it alone with `--tables insiders` for a fast daily insider refresh.
 8. Report rendering: `quarto render report/data.qmd` from the repo root
    (jupyter kernel `data-manager` = this repo's venv). Never put `eqrm` or
    other projects' names in docs/reports/code here.
@@ -281,5 +344,6 @@ of members across all days without the as_of predicate.
 | investable members on D | `SELECT * FROM universe_pit WHERE as_of=?` (uses `idx_pit_asof`) |
 | fundamentals history | `SELECT * FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod` (all 112 fields native columns) |
 | delisting evidence | `corporate_actions` rows `action IN ('delisted','bankruptcyliquidation')` |
+| insider buys/sells (PIT) | `SELECT * FROM insider_transactions WHERE ticker=? AND transactioncode IN ('P','S') AND filingdate<=?` — use **filingdate** (knowable by then), signed `transactionshares`, as-traded `transactionpricepershare` |
 | factor returns (daily) | `SELECT date, mkt_rf, smb, hml, rmw, cma, mom, st_rev, lt_rev, rf FROM french_factors WHERE date >= ?` (returns are %/day) |
 | column definition / unit | `SELECT title, description FROM descriptions WHERE table_name=? AND indicator=?` — see the **"data dictionary is IN the database"** section above; derived-table columns: `docs/data_dictionary.md` |

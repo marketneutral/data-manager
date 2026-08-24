@@ -326,3 +326,40 @@ class SharadarProvider(BaseProvider):
         r = sorted(rows, key=lambda x: str(x.get("calendardate", "")))[-1]
         return ratios_from_row(r)
 
+    # ---- SF2 insider transactions (mapped to the InsiderRow shape) ----
+    def get_insider_transactions(self, ticker: str) -> list[dict]:
+        """SF2 insider-trade filings for a ticker, as native dicts.
+
+        Column 'date' is the SEC filing date; 'transactiondate' the trade date.
+        `transactionshares` is signed (negative = disposition/sale).
+        """
+        rows = _fetch("insiders", ticker=ticker)
+        out = []
+        for r in rows:
+            out.append({
+                "ticker": r.get("ticker"),
+                "filingdate": r.get("date"),
+                "formtype": r.get("formtype"),
+                "ownername": r.get("ownername"),
+                "rownum": _num(r.get("rownum")),
+                "officertitle": r.get("officertitle"),
+                "isdirector": r.get("isdirector"),
+                "isofficer": r.get("isofficer"),
+                "istenpercentowner": r.get("istenpercentowner"),
+                "transactiondate": r.get("transactiondate"),
+                "securityadcode": r.get("securityadcode"),
+                "transactioncode": r.get("transactioncode"),
+                "sharesownedbeforetransaction": _num(r.get("sharesownedbeforetransaction")),
+                "transactionshares": _num(r.get("transactionshares")),
+                "sharesownedfollowingtransaction": _num(r.get("sharesownedfollowingtransaction")),
+                "transactionpricepershare": _num(r.get("transactionpricepershare")),
+                "transactionvalue": _num(r.get("transactionvalue")),
+                "securitytitle": r.get("securitytitle"),
+                "directorindirect": r.get("directorindirect"),
+                "natureofownership": r.get("natureofownership"),
+                "dateexercisable": r.get("dateexercisable"),
+                "priceexercisable": _num(r.get("priceexercisable")),
+                "expirationdate": r.get("expirationdate"),
+            })
+        return out
+

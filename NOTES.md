@@ -465,3 +465,34 @@ only for decompositions/custom constructions.
   / HML=-0.62 / Mkt-RF=0.73 / Mom=1.06 / ST_Rev=0.49 / LT_Rev=-0.23 (match
   the vendor files exactly). The factors are value-weighted long-short
   spreads — never join to `prices` by ticker; they are market factor series.
+
+## SF2 insider transactions — `insider_transactions` table (2026-08-22)
+
+Ingested the Sharadar **SF2** bulk file (`insiders.csv.zip`) as a new raw
+warehouse table, 11,517,969 rows / 12,214 tickers / 2008-01-02 → 2026-08-21.
+
+- Scope: mirror the full vendor schema (23 served columns) as native columns
+  (TEXT dates/roles + REAL shares/price/value). Key `(ticker, filingdate,
+  formtype, ownername, rownum)`; 3 helper indexes (ticker+date, date, code).
+- Code: `db.SCHEMA` table + `bulkload.load_insiders` (+ `INSIDER_COLS`),
+  `bulk.BULK_TABLES["insiders"]` + `WIPE_TABLES`, CLI `BULK_ORDER` /
+  `load-bulk insiders` / `status` line, provider `get_insider_transactions`.
+  `bulk-update` treats insiders like `descriptions`: it does NOT trigger the
+  piotroski/quarterly/ratios/PIT rebuilds (a fast `--tables insiders` daily
+  refresh). Test: test_load_insiders_stores_rows (+ `insider_transactions` in
+  the schema TABLES set).
+- **PIT & splits (verified):** price, share counts, and value are all
+  **as-traded at the transaction date — NOT split-adjusted backward**. Checked
+  AAPL 7:1(2014)×4:1(2020), AMZN 20:1, NVDA 10:1, GOOGL 20:1, TSLA 5:1/3:1:
+  pre-split trades report the true as-traded price (price/close ≈ 1.0) and
+  `price × shares == value` exactly — so shares are as-traded too, unlike the
+  SF1 `price` column (which IS back-adjusted and leaks forward splits; never
+  multiply SF2 shares by SF1 `price`).
+- To build a look-ahead-free insider signal filter `filingdate <= decision
+  date` (median trade→filing lag 2d, but tail to years). `transactiondate` is
+  the event. `RESTATED` formtypes (272k) are re-filings — separate key rows.
+  `transactionvalue` is USD (dictionary "millions" wording unreliable; value ≡
+  price × shares). Ticker is the current/last symbol.
+- Verified: splitter price/close checks, `px×sh==value` identity, filing-lag
+  percentiles, code/restatement tally. Full suite 97 green.
+

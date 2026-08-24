@@ -225,6 +225,46 @@ Column-level definitions for every table in `~/.prime/agent/data_manager.db`. Ve
 | `tbvps` | currency/share | Tangible Assets Book Value per Share — [Metrics] Measures the ratio between [Tangibles] and [SharesWA] as adjusted by [ShareFactor]. |
 | `workingcapital` | currency | Working Capital — [Metrics] Working capital measures the difference between [AssetsC] and [LiabilitiesC]. |
 
+### `insider_transactions` — RAW (insiders zip; Sharadar SF2, SEC Form 3/4/5)
+
+One row per filing line: SEC insider transactions — the filer's name and role, buy /
+sell, share counts, price, and value. KEY = `(ticker, filingdate, formtype,
+ownername, rownum)`. Column definitions are the vendor's own, mirrored into the
+`descriptions` table (`table_name = 'SF2'`). Notes: source `date` is stored as
+`filingdate`; `transactionshares` is signed (+ acquisition / − disposition);
+`transactionvalue` is USD (the dictionary's "millions" wording is unreliable);
+**PIT / splits (verified):** `transactionpricepershare`, `transactionshares`,
+`transactionvalue`, and the `sharesowned*` columns are all **as-traded at the
+transaction date** — NOT split-adjusted backward (verified against AAPL 7:1/4:1,
+AMZN 20:1, NVDA 10:1, GOOGL 20:1, TSLA 5:1/3:1: pre-split rows show the true
+as-traded price and `price × shares == value`). This distinguishes SF2 from the
+SF1 `price` column, which IS back-adjusted to forward time.
+**PIT timing:** filter `filingdate <= decision date` (a trade is knowable to you
+only once filed); median trade→filing lag 2 days, tail to years.
+
+
+| column | type | meaning |
+|---|---|---|
+| ticker | TEXT | security (join master on `ticker`) |
+| filingdate | TEXT | SEC filing date (source `date`) |
+| formtype | TEXT | 3 / 4 / 5, optionally `RESTATED ` |
+| ownername | TEXT | filer / owner name |
+| rownum | REAL | line number within the filing (key) |
+| officertitle | TEXT | semicolon role list (CEO, CFO, ...) |
+| isdirector / isofficer / istenpercentowner | TEXT | Y / N roles |
+| transactiondate | TEXT | trade date (the event; lags filing) |
+| securityadcode | TEXT | N/ND/NA/D/DD/DA (non-derivative vs derivative, acq/disp) |
+| transactioncode | TEXT | SEC code P (buy) / S (sell) / A/D/M/X/C/F/G/J/V/W |
+| sharesownedbeforetransaction | REAL | holdings before the trade |
+| transactionshares | REAL | signed share count (+buy / −sell) |
+| sharesownedfollowingtransaction | REAL | holdings after the trade |
+| transactionpricepershare | REAL | USD/share |
+| transactionvalue | REAL | USD trade value |
+| securitytitle | TEXT | class code (`Com`, `Com;ClA`, ...) |
+| directorindirect | TEXT | D / I ownership (blank ≠ direct — see AGENTS) |
+| natureofownership | TEXT | trust / fund vehicle when indirect |
+| dateexercisable / priceexercisable / expirationdate | TEXT/REAL/TEXT | option fields (forms 3/4/5 derivatives) |
+
 ### `prices` — RAW (stocks+funds zips)
 
 > from the SEP/SFP bulk price columns; closeadj/closeunadj collapsed into `adjustment`; stored close = closeunadj (as-traded), OHLC as-traded (vendor OHLC are split-adjusted)

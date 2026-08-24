@@ -376,6 +376,36 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     f_score         INTEGER,
     PRIMARY KEY (ticker, fiscal_year)
 );
+
+CREATE TABLE IF NOT EXISTS insider_transactions (
+    ticker                          TEXT,
+    filingdate                      TEXT,   -- vendor 'date' column = SEC filing date
+    formtype                        TEXT,
+    ownername                       TEXT,
+    rownum                          REAL,
+    officertitle                    TEXT,
+    isdirector                      TEXT,   -- Y/N
+    isofficer                       TEXT,   -- Y/N
+    istenpercentowner               TEXT,   -- Y/N
+    transactiondate                 TEXT,
+    securityadcode                  TEXT,   -- NA/ND/DA/DD/N/D
+    transactioncode                 TEXT,   -- P/S/A/D/M/X/C/F/G/J/V/J/W...
+    sharesownedbeforetransaction    REAL,
+    transactionshares               REAL,   -- signed (+ buy / - sell)
+    sharesownedfollowingtransaction REAL,
+    transactionpricepershare        REAL,   -- USD/share
+    transactionvalue                REAL,   -- USD (see note in AGENTS.md)
+    securitytitle                   TEXT,   -- 'Com;ClA' etc.
+    directorindirect                TEXT,   -- D/I
+    natureofownership               TEXT,
+    dateexercisable                 TEXT,
+    priceexercisable                REAL,   -- USD
+    expirationdate                  TEXT,
+    PRIMARY KEY (ticker, filingdate, formtype, ownername, rownum)
+);
+CREATE INDEX IF NOT EXISTS idx_insider_ticker ON insider_transactions(ticker, filingdate);
+CREATE INDEX IF NOT EXISTS idx_insider_date ON insider_transactions(filingdate);
+CREATE INDEX IF NOT EXISTS idx_insider_code ON insider_transactions(transactioncode);
 """
 
 

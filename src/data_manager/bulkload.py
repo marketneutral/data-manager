@@ -180,6 +180,69 @@ load_funds = load_prices
 
 
 # --------------------------------------------------------------------------
+# SF2: insider transactions (bulk table 'insiders').
+# One row per (ticker, filing date, form type, owner, row number). Shares /
+# per-share / value are REAL; the rest TEXT or `YYYY-MM-DD` TEXT. Column set
+# matches the served bulk/API columns exactly (the dictionary's `issuername`
+# is never populated and is not served, so it is omitted here).
+# --------------------------------------------------------------------------
+INSIDER_COLS = [
+    ("ticker", "ticker", "s"),
+    ("filingdate", "date", "s"),
+    ("formtype", "formtype", "s"),
+    ("ownername", "ownername", "s"),
+    ("rownum", "rownum", "n"),
+    ("officertitle", "officertitle", "s"),
+    ("isdirector", "isdirector", "s"),
+    ("isofficer", "isofficer", "s"),
+    ("istenpercentowner", "istenpercentowner", "s"),
+    ("transactiondate", "transactiondate", "s"),
+    ("securityadcode", "securityadcode", "s"),
+    ("transactioncode", "transactioncode", "s"),
+    ("sharesownedbeforetransaction", "sharesownedbeforetransaction", "n"),
+    ("transactionshares", "transactionshares", "n"),
+    ("sharesownedfollowingtransaction", "sharesownedfollowingtransaction", "n"),
+    ("transactionpricepershare", "transactionpricepershare", "n"),
+    ("transactionvalue", "transactionvalue", "n"),
+    ("securitytitle", "securitytitle", "s"),
+    ("directorindirect", "directorindirect", "s"),
+    ("natureofownership", "natureofownership", "s"),
+    ("dateexercisable", "dateexercisable", "s"),
+    ("priceexercisable", "priceexercisable", "n"),
+    ("expirationdate", "expirationdate", "s"),
+]
+
+
+def load_insiders(path, conn, commit_every=100000):
+    """Load the full SF2 insider-transactions mirror (bulk 'insiders' zip)."""
+    cols = ",".join(c for c, _, _ in INSIDER_COLS)
+    marks = ",".join("?" * len(INSIDER_COLS))
+    n = 0
+    rows = []
+
+    def flush():
+        nonlocal rows
+        conn.executemany(
+            "INSERT OR REPLACE INTO insider_transactions "
+            f"({cols}) VALUES ({marks})", rows)
+        rows = []
+
+    for r in stream_csv(path):
+        vals = []
+        for db_col, src_col, typ in INSIDER_COLS:
+            v = r.get(src_col)
+            vals.append(v if typ == "s" else num(v))
+        rows.append(tuple(vals))
+        n += 1
+        if len(rows) >= commit_every:
+            flush()
+            conn.commit()
+    flush()
+    conn.commit()
+    return n
+
+
+# --------------------------------------------------------------------------
 # Ken French daily factor returns (mba.tuck.dartmouth.edu, US daily files)
 # --------------------------------------------------------------------------
 

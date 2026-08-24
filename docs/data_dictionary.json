@@ -2214,5 +2214,172 @@
     "source": "this repo (Ken French)"
    }
   ]
+ },
+ "insider_transactions": {
+  "origin": "RAW (insiders zip; Sharadar SF2, SEC Form 3/4/5)",
+  "key": "(ticker, filingdate, formtype, ownername, rownum)",
+  "columns": [
+   {
+    "name": "ticker",
+    "type": "REAL",
+    "pk": 1,
+    "unit": "text",
+    "definition": "The ticker is a unique identifier for a security in the database. Where a company is delisted and the ticker subsequently recycled for use by a different company; we utilise that ticker for the currently active company and append a number to the ticker of the delisted company. The ACTIONS table provides a record of historical ticker changes."
+   },
+   {
+    "name": "filingdate",
+    "type": "TEXT",
+    "pk": 1,
+    "unit": "date",
+    "definition": "The date the form was filed with the SEC."
+   },
+   {
+    "name": "formtype",
+    "type": "TEXT",
+    "pk": 1,
+    "unit": "text",
+    "definition": "The type of SEC form . Available options are 3; 4 or 5 that the data are sourced from. Preprended by RESTATED in the event that the filing is subsequently restated."
+   },
+   {
+    "name": "ownername",
+    "type": "TEXT",
+    "pk": 1,
+    "unit": "text",
+    "definition": "The name of the owner."
+   },
+   {
+    "name": "officertitle",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Where the owner is an officer of the company a semi-colon delimited list of standardized role codes is provided (for example CEO;Pres for Chief Executive Officer and President). Multiple roles may apply. Blank where no officer title is reported or the filer is not presenting an officer role. Available codes are as follows: [CEO] Chief Executive Officer (company-level) [DivCEO] CEO of a division; subsidiary; brand or business unit [Chair] Chairman / Chair of the Board [VChair] Vice Chairman / Vice Chair [CFO] Chief Financial Officer [COO] Chief Operating Officer [Pres] President [CTO] Chief Technology Officer [CLO] Chief Legal Officer / General Counsel [CIO] Chief Information or Chief Investment Officer [CMO] Chief Marketing Officer [CCO] Chief Compliance; Credit or Commercial Officer [CHRO] Chief Human Resources / People / Human Capital / Human Relations Officer [CRO] Chief Risk or Chief Revenue Officer [Med] Chief Medical Officer [Lend] Chief Lending or Chief Loan Officer [CSci] Chief Scientific Officer / Chief Scientist [CStrat] Chief Strategy Officer / Chief Strategist [CAO] Chief Administrative Officer; Chief Accounting Officer or Chief Accountant [PAO] Principal Accounting Officer [Ctrl] Controller / Comptroller [Sec] Secretary / Corporate Secretary [Treas] Treasurer [EVP] Executive Vice President [SVP] Senior Vice President [VP] Vice President [CVP] Corporate Vice President [MD] Managing Director [GM] General Manager [Head] Head of (function / unit) [Partner] Partner / General Partner [Prin] Principal [Adv] Advisor / Adviser [PM] Portfolio Manager [Trustee] Trustee [Founder] Founder / Co-Founder [Interim] Interim or acting role [Former] Former role [Dir] Board Director (title language) [ExecOff] Executive Officer (generic; not CEO) [Sec16] Section 16 Officer [Off] Officer (generic) [CXO] Other Chief Officer not listed above"
+   },
+   {
+    "name": "isdirector",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Is the owner a Board Director? [Y]es or [N]o."
+   },
+   {
+    "name": "isofficer",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Is the owner an officer of the company? [Y]es or [N]o."
+   },
+   {
+    "name": "istenpercentowner",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Does the owner hold ten percent or more of the class of security? [Y]es or [N]o."
+   },
+   {
+    "name": "transactiondate",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "date",
+    "definition": "If there has been a transaction; the date of the transaction is provided here."
+   },
+   {
+    "name": "securityadcode",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "text",
+    "definition": "[D] Derivative; No Transaction [DA] Derivative Acquisition [DD] Derivative Disposition [N] Non-Derivative; No Transaction [NA] Non-Derivative Acquisition [ND] Non-Derivative Disposition"
+   },
+   {
+    "name": "transactioncode",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "text",
+    "definition": "The available [Transaction Codes] [Transaction Categories] Descriptions are as follows: [P] [General] Open market or private purchase of non-derivative or derivative security [S] [General] Open market or private sale of non-derivative or derivative security [V] [General] Transaction voluntarily reported earlier than required [A] [Rule 16b-3] Grant; award or other acquisition pursuant to Rule 16b-3(d) [D] [Rule 16b-3] Disposition to the issuer of issuer equity securities pursuant to Rule 16b-3(e) [F] [Rule 16b-3] Payment of exercise price or tax liability by delivering or withholding securities [I] [Rule 16b-3] Discretionary transaction in accordance with Rule 16b-3(f) [M] [Rule 16b-3] Exercise or conversion of derivative security exempted pursuant to Rule 16b-3 [C] [Derivative Codes] Conversion of derivative security [E] [Derivative Codes] Expiration of short derivative position [H] [Derivative Codes] Expiration (or cancellation) of long derivative position with value received [O] [Derivative Codes] Exercise of out-of-the-money derivative security [X] [Derivative Codes] Exercise of in-the-money or at-the-money derivative security [G] [Other Section 16(b) Exempt] Bona fide gift [L] [Other Section 16(b) Exempt] Small acquisition under Rule 16a-6 [W] [Other Section 16(b) Exempt] Acquisition or disposition by will or the laws of descent and distribution [Z] [Other Section 16(b) Exempt] Deposit into or withdrawal from voting trust [J] [Other] Other acquisition or disposition [K] [Other] Transaction in equity swap or instrument with similar characteristics [U] [Other] Disposition pursuant to a tender of shares in a change of control transaction"
+   },
+   {
+    "name": "sharesownedbeforetransaction",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "units",
+    "definition": "The number of shares owned before the transaction."
+   },
+   {
+    "name": "transactionshares",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "units",
+    "definition": "The number of shares transacted."
+   },
+   {
+    "name": "sharesownedfollowingtransaction",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "units",
+    "definition": "The number of shares owned following the transaction."
+   },
+   {
+    "name": "transactionpricepershare",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD/share",
+    "definition": "The transaction price per share."
+   },
+   {
+    "name": "transactionvalue",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "The value of the transaction. Reported in USD millions to 1 decimal place."
+   },
+   {
+    "name": "securitytitle",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "text",
+    "definition": "The title of the class of security; provided as a semi-colon delimited list of standardized security type codes (for example Com;ClA for Class A Common Stock). Multiple types may apply. Blank where no security title is reported. Available codes are as follows: [Com] Common stock / shares / ordinary shares [ClA] Class A [ClB] Class B [ClC] Class C [ClI] Class I [ClK] Class K [Pref] Preferred stock [Conv] Convertible [RSU] Restricted stock unit(s) [Rest] Restricted stock / shares [Opt] Stock option [NQSO] Non-qualified stock option [ISO] Incentive stock option [ESO] Employee stock option [Phant] Phantom stock / units [Def] Deferred stock / units / shares / compensation [SAR] Stock appreciation right [Warr] Warrant [PSU] Performance share / unit / right [Unit] Stock / share / OP / partnership units [ADR] American depositary receipt/share [Dep] Depositary shares [Right] Rights [DER] Dividend equivalent rights [Swap] Equity / total return swap [Note] Note / bond [LLC] Limited liability company interest [LP] Limited partnership interest [GP] General partner interest [Earn] Earnout shares / rights [Exch] Exchangeable shares [Paired] Paired shares [NoneHeld] No securities beneficially owned / none held"
+   },
+   {
+    "name": "directorindirect",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Is the ownership held [D]irectly or [I]ndirectly?"
+   },
+   {
+    "name": "natureofownership",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "text",
+    "definition": "Where the ownership is held through an investment vehicle (trust; fund etc) the name of that investment vehicle is provided here."
+   },
+   {
+    "name": "dateexercisable",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "date",
+    "definition": "The date that an option is exercisable; where applicable and available."
+   },
+   {
+    "name": "priceexercisable",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD",
+    "definition": "The price at which an option is exercisable; where applicable and available."
+   },
+   {
+    "name": "expirationdate",
+    "type": "TEXT",
+    "pk": 0,
+    "unit": "date",
+    "definition": "The data at which an option expires; where applicable and available"
+   },
+   {
+    "name": "rownum",
+    "type": "REAL",
+    "pk": 1,
+    "unit": "numeric",
+    "definition": "The record number for a particular owner and filing date; which forms part of the key for the record."
+   }
+  ]
  }
 }
