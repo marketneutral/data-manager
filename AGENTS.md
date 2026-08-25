@@ -13,8 +13,9 @@ point-in-time market-data warehouse for the quant stack:
 survivorship-free), a 3.15M-row SF1 fundamentals mirror (6 reporting
 dimensions), the full Sharadar securities master (31,742 instruments, 19,227
 delisted), corporate actions (672k rows), metrics, S&P500 membership history,
-insider transactions (SF2, `insider_transactions`), and the locally built PIT
-universe (`universe_pit`, 13.46M stock-days over 7,187 trading days).
+insider transactions (SF2, `insider_transactions`), 13F institutional-ownership
+holdings (SF3, `institutional_ownership`), and the locally built PIT universe
+(`universe_pit`, 13.46M stock-days over 7,187 trading days).
 
 Raw tables come from Sharadar **bulk-download zips** (full history, no
 per-ticker API calls); derived tables are rebuilt locally with zero requests.
@@ -56,6 +57,7 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | sp500_membership | raw (API) | (ticker,date) | S&P membership history 1957→now |
 | french_factors | raw (Ken French Data Library) | date | daily US factor returns in % (percent/day): Mkt-RF, SMB, HML, RMW, CMA, Mom, ST_Rev, LT_Rev, RF |
 | insider_transactions | raw (insiders zip, SF2) | (ticker,filingdate,formtype,ownername,rownum) | SEC insider Form 3/4/5 filings (owner, role, buy/sell, shares, price, value). Column defs in `descriptions` (table_name `SF2`). `date` stored as `filingdate`; `transactionshares` signed (+buy/−sell) |
+| institutional_ownership | raw (sf3 zip, SF3) | (ticker,calendardate,investorname,securitytype) | 13F institutional holdings (investor, quarter-end, security class, units in thousands, value in USD millions). Column defs in `descriptions` (table_name `SF3`). `date` stored as `calendardate`, `investorid` as `investorname` |
 | fundamentals | derived (sf1 ARY) | (ticker,fiscal_year) | Piotroski F-Score + 9 components |
 | quarterly_statements | derived (sf1 ARQ) | (ticker,period) | 13-col quarterly mirror |
 | ratios | derived (sf1 MRY latest) | ticker | valuation/quality snapshot (forward_pe & beta always NULL — SF1 lacks them) |
@@ -266,6 +268,34 @@ naive; take latest per (ticker, transactiondate, ownername, rownum,
 formtype-base). `ticker` is the current/last symbol (match `securities_master`
 on `ticker`). `transactionvalue` is USD.
 
+## SF3: 13F institutional ownership (`institutional_ownership`) semantics
+
+One row per (ticker, quarter-end, investor, security type) — 13F institutional
+holdings, live now (the full bulk file is ~81M rows). Source = Sharadar `sf3`
+bulk zip (`holdings.csv.zip`). Where the vendor servies duplicate rows for the
+same (ticker, quarter, investor, class), the loader collapses on the key.
+
+* **Calendar cadence**: `calendardate` is the **last day of the calendar
+  quarter** (vendor column `date`) — 13F filings are quarterly (Mar/Jun/Sep/Dec
+  31). This is the reporting quarter-end, **not** the filing date (13F filings
+  lag by up to ~45 days), so for a point-in-time signal treat the holding as
+  known only once the quarter has ended **and** the form is filed.
+* **`investorname`** is the vendor's sticky 6-char institutional investor code
+  (vendor column `investorid`; e.g. `MARKOW`, `WASHI2`). It is NOT a readable
+  name — join/lookup investor identity elsewhere if names are needed.
+* **`securitytype`**: `SHR` Common Shares, `FND` Fund Units, `CLL` Call
+  Options, `PUT` Put Options, `WNT` Warrants, `DBT` Debt, `PRF` Pref, ... —
+  filter to `SHR` for common-equity ownership work.
+* **Units vs Value**: `units` is in **thousands of units** (integer); `value`
+  is in **USD millions** (1 decimal). So shares ≈ `units × 1000`, USD ≈
+  `value × 1e6`. Do not mix the two scales.
+* Duplicate protection: `INSERT OR REPLACE` on `(ticker, calendardate,
+  investorname, securitytype)`; re-running a load (e.g. `--tables sf3`) is
+  idempotent. `descriptions` (table_name `SF3`) holds the authoritative column
+  dictionary. Aggregating owner count / ownership concentration across the
+  whole ~81M-row table requires the `idx_instown_caldate` / `idx_instown_ticker`
+  predicates (always filter by `calendardate` first).
+
 ## universe_pit semantics (read this twice)
 
 One row per (trading day, member). Membership iff, **as of that day**:
@@ -292,9 +322,9 @@ of members across all days without the as_of predicate.
 6. 2 price rows have `close ≤ 0`; ~5.5% have `volume = 0`; screen both.
 7. `bulk_update` reloads full-history zips with INSERT OR REPLACE — do not
    run writers concurrently with it; keep read-only connections.
-8. `insiders` (SF2) is part of the default `bulk-update` set but never
-   triggers the piotroski/quarterly/ratios/PIT rebuilds (it feeds nothing);
-   add it alone with `--tables insiders` for a fast daily insider refresh.
+8. `insiders` (SF2) and `sf3` (SF3) are part of the default `bulk-update` set
+   but never trigger the piotroski/quarterly/ratios/PIT rebuilds (they feed
+   nothing); refresh either alone, e.g. `--tables sf3`.
 8. Report rendering: `quarto render report/data.qmd` from the repo root
    (jupyter kernel `data-manager` = this repo's venv). Never put `eqrm` or
    other projects' names in docs/reports/code here.
@@ -339,5 +369,6 @@ of members across all days without the as_of predicate.
 | fundamentals history | `SELECT * FROM sf1 WHERE ticker=? AND dimension='ARY' ORDER BY reportperiod` (all 112 fields native columns) |
 | delisting evidence | `corporate_actions` rows `action IN ('delisted','bankruptcyliquidation')` |
 | insider buys/sells (PIT) | `SELECT * FROM insider_transactions WHERE ticker=? AND transactioncode IN ('P','S') AND filingdate<=?` — use **filingdate** (knowable by then), signed `transactionshares`, as-traded `transactionpricepershare` |
+| 13F holders of a name | `SELECT investorname, securitytype, units, value FROM institutional_ownership WHERE ticker=? AND securitytype='SHR' AND calendardate=?` (units in thousands, value in USD millions) |
 | factor returns (daily) | `SELECT date, mkt_rf, smb, hml, rmw, cma, mom, st_rev, lt_rev, rf FROM french_factors WHERE date >= ?` (returns are %/day) |
 | column definition / unit | `SELECT title, description FROM descriptions WHERE table_name=? AND indicator=?` — see the **"data dictionary is IN the database"** section above; derived-table columns: `docs/data_dictionary.md` |

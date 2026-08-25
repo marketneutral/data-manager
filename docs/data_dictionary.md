@@ -265,6 +265,25 @@ only once filed); median trade→filing lag 2 days, tail to years.
 | natureofownership | TEXT | trust / fund vehicle when indirect |
 | dateexercisable / priceexercisable / expirationdate | TEXT/REAL/TEXT | option fields (forms 3/4/5 derivatives) |
 
+### `institutional_ownership` — RAW (sf3 zip; Sharadar SF3, 13F institutional holdings)
+
+One row per (ticker, quarter-end, institutional investor, security class):
+13F filings. KEY = `(ticker, calendardate, investorname, securitytype)`. Column
+definitions are the vendor's own, mirrored into `descriptions` (`table_name =
+'SF3'`). Notes: vendor `date` is the **quarter-end** stored as `calendardate`;
+vendor `investorid` (sticky 6-char investor code) is stored as `investorname`;
+`units` is in **thousands** of units and `value` is in **USD millions** (do not
+mix scales).
+
+| column | type | meaning |
+|---|---|---|
+| ticker | TEXT | security (join master on `ticker`) |
+| calendardate | TEXT | last day of the calendar quarter (13F period, vendor `date`) |
+| investorname | TEXT | sticky 6-char institutional investor code (vendor `investorid`) |
+| securitytype | TEXT | SHR/FND/CLL/PUT/WNT/DBT/PRF/... (use `SHR` for common equity) |
+| units | REAL | units held, **in thousands** |
+| value | REAL | holding value, **USD millions** |
+
 ### `prices` — RAW (stocks+funds zips)
 
 > from the SEP/SFP bulk price columns; closeadj/closeunadj collapsed into `adjustment`; stored close = closeunadj (as-traded), OHLC as-traded (vendor OHLC are split-adjusted)

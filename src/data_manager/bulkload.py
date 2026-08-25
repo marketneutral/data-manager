@@ -180,6 +180,37 @@ load_funds = load_prices
 
 
 # --------------------------------------------------------------------------
+# SF3: 13F institutional ownership (bulk table 'sf3', file holdings.csv.zip).
+# One row per (ticker, quarter-end, investor, security type). Vendor columns:
+#   ticker, investorid, securitytype, date (= quarter-end), value, units.
+# `investorid` is the sticky 6-char investor code (stored as `investorname`),
+# `date` is the calendar quarter-end (stored as `calendardate`); `value` is USD
+# millions, `units` is thousands of units.
+# --------------------------------------------------------------------------
+def load_institutional_ownership(path, conn, commit_every=200000):
+    """Load the full SF3 13F holdings mirror (bulk 'sf3' zip)."""
+    n = 0
+    rows = []
+
+    def flush():
+        nonlocal rows
+        conn.executemany(
+            "INSERT OR REPLACE INTO institutional_ownership "
+            "(ticker, calendardate, investorname, securitytype, units, value) "
+            "VALUES (?,?,?,?,?,?)", rows)
+        rows = []
+
+    for r in stream_csv(path):
+        rows.append((r.get("ticker"), r.get("date"), r.get("investorid"),
+                     r.get("securitytype"), num(r.get("units")), num(r.get("value"))))
+        n += 1
+        if len(rows) >= commit_every:
+            flush(); conn.commit()
+    flush(); conn.commit()
+    return n
+
+
+# --------------------------------------------------------------------------
 # SF2: insider transactions (bulk table 'insiders').
 # One row per (ticker, filing date, form type, owner, row number). Shares /
 # per-share / value are REAL; the rest TEXT or `YYYY-MM-DD` TEXT. Column set

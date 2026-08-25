@@ -8,7 +8,8 @@ the last one loaded (tracked in a JSON manifest next to the zips), then loads
 the deltas with INSERT OR REPLACE.
 
 Tables and their loaders (bulkload.py):
-  tickers, stocks, funds, actions, metrics, sp500, fundamentals, insiders (SF2)
+  tickers, stocks, funds, actions, metrics, sp500, fundamentals, insiders (SF2),
+  sf3 (13F institutional ownership)
 """
 import json
 import os
@@ -32,13 +33,14 @@ BULK_TABLES = {
     "sp500": "load_sp500",
     "fundamentals": "load_fundamentals",
     "insiders": "load_insiders",        # SF2: insider transactions
+    "sf3": "load_institutional_ownership",  # SF3: 13F institutional ownership
     "descriptions": "load_descriptions",  # vendor field dictionary (all tables)
 }
 
 # tables whose contents get wiped before a from-zero load
 WIPE_TABLES = ["prices", "sf1", "corporate_actions", "securities_master",
                "metrics", "sp500_membership", "french_factors",
-               "insider_transactions"]
+               "insider_transactions", "institutional_ownership"]
 
 
 def _key() -> str:
@@ -186,7 +188,7 @@ def bulk_update(dest_dir: str = DEFAULT_DIR, conn=None, tables=None,
     # SF2 (insiders) is a standalone raw mirror — like `descriptions`, it does
     # NOT feed any derived table (piotroski/quarterly/ratios/PIT), so updating
     # it must not trigger a full re-derive + universe rebuild.
-    loaded_core = {t: n for t, n in loaded.items() if t not in ("descriptions", "insiders")}
+    loaded_core = {t: n for t, n in loaded.items() if t not in ("descriptions", "insiders", "sf3")}
     if derive and loaded_core:
         print("[bulk] deriving piotroski/quarterly/ratios", flush=True)
         loaded_core["piotroski"] = build_piotroski(conn)

@@ -496,3 +496,28 @@ warehouse table, 11,517,969 rows / 12,214 tickers / 2008-01-02 → 2026-08-21.
 - Verified: splitter price/close checks, `px×sh==value` identity, filing-lag
   percentiles, code/restatement tally. Full suite 97 green.
 
+
+## SF3 13F institutional ownership — `institutional_ownership` table (2026-08-24)
+
+Ingested the Sharadar **SF3** bulk file (`sf3` / `holdings.csv.zip`) as a new raw
+warehouse table, ~81M rows / quarter-end 13F holdings.
+
+- Scope: mirror the full served schema as native columns. Key `(ticker,
+  calendardate, investorname, securitytype)`; 2 helper indexes
+  (`idx_instown_caldate`, `idx_instown_ticker`). Vendor `date` → `calendardate`
+  (quarter-end), vendor `investorid` → `investorname` (sticky 6-char investor
+  code). `units` in thousands, `value` in USD millions.
+- Code: `db.SCHEMA` table + `bulkload.load_institutional_ownership`,
+  `bulk.BULK_TABLES['sf3']` + `WIPE_TABLES`, CLI `BULK_ORDER` / `load-bulk sf3` /
+  `status` line. `bulk-update` treats sf3 like descriptions/insiders: it does
+  NOT trigger the piotroski/quarterly/ratios/PIT rebuilds (`--tables sf3` for a
+  fast refresh). Test: test_load_institutional_ownership_stores_rows (+ table in
+  the schema TABLES set).
+- Semantics: `calendardate` is the reporting quarter-end, not the filing date
+  (13F lags ~45 days). `securitytype='SHR'` = common shares; `units` thousands,
+  `value` USD millions (do not mix scales). PIT use: treat a quarter's holdings
+  as known only after quarter-end + filing lag.
+- Verified: schema coverage vs `descriptions` SF3, loader round-trip, doc
+  pointers across AGENTS/README/NOTES/data_dictionary(.md/.json). Full suite 98
+  green.
+

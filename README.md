@@ -17,6 +17,9 @@ Acquisition, storage, and point-in-time market data for the quant research stack
 - **S&P500 membership:** current members + per-member history back to the 1980s.
 - **SF2 insider transactions:** `insider_transactions` — SEC Form 3/4/5 filings
   (owner, role, buy/sell, shares, price, value), 2008→now, 11.5M rows.
+- **SF3 13F institutional ownership:** `institutional_ownership` — quarter-end
+  institutional holdings (investor, security class, units in thousands, value in
+  USD millions), ~81M rows.
 - **Ken French daily factor returns:** `french_factors` — Mkt-RF, SMB, HML,
   RMW, CMA, Mom, ST_Rev, LT_Rev (+ daily RF), 1926 → now, percent/day,
   from the Ken French Data Library (free; the only non-Sharadar raw table).
@@ -171,7 +174,7 @@ data-manager enrich-cik | enrich-figi | enrich-sic     legacy SEC/OpenFigi enric
 | Source | Used for | Cost |
 |---|---|---|
 | iShares IWV CSV | universe + sector | free |
-| **Sharadar** | prices (stocks+funds), SF1 fundamentals/quarterlies/ratios, master, actions, sp500, classifications | paid subscription |
+| **Sharadar** | prices (stocks+funds), SF1 fundamentals/quarterlies/ratios, SF2 insider transactions, SF3 13F institutional ownership, master, actions, sp500, classifications | paid subscription |
 | **Ken French Data Library** | `french_factors` — US daily factor returns (3F/5F/Mom/ST_Rev/LT_Rev + RF) | free |
 | SEC / OpenFigi | legacy enrichment (figi/cik/sic/lei) | free |
 

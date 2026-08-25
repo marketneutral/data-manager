@@ -15,6 +15,7 @@ TABLES = {
     "descriptions",
     "french_factors",
     "insider_transactions",
+    "institutional_ownership",
 }
 
 
@@ -57,6 +58,28 @@ def test_load_insiders_stores_rows(conn, tmp_path):
     assert row["transactiondate"] == "2026-08-18"
     assert row["transactionshares"] == -1439        # signed: net sale
     assert row["transactionpricepershare"] == 307.49
+
+
+def test_load_institutional_ownership_stores_rows(conn, tmp_path):
+    """The SF3 13F holdings loader mirrors investor rows into the warehouse."""
+    import io, zipfile
+    from data_manager import bulkload
+    csv_ = ("ticker,investorid,securitytype,date,value,units\n"
+            "AAPL,MARKOW,SHR,2026-06-30,19.5,67\n"
+            "AAPL,WASHI2,SHR,2026-06-30,77,266\n")
+    p = tmp_path / "holdings.csv.zip"
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("holdings.csv", csv_)
+    n = bulkload.load_institutional_ownership(str(p), conn)
+    assert n == 2
+    rows = conn.execute(
+        "SELECT ticker, calendardate, investorname, securitytype, units, value "
+        "FROM institutional_ownership ORDER BY investorname").fetchall()
+    assert len(rows) == 2
+    assert rows[0]["investorname"] == "MARKOW"       # vendor investorid -> investorname
+    assert rows[0]["calendardate"] == "2026-06-30"   # vendor date -> calendardate
+    assert rows[0]["value"] == 19.5                  # USD millions
+    assert rows[0]["units"] == 67                    # thousands of units
 
 
 def test_connect_creates_all_tables(db_path):

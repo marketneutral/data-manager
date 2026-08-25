@@ -29,7 +29,7 @@ from .universe import (
 )
 from . import enrich
 
-BULK_ORDER = ("tickers", "stocks", "actions", "metrics", "sp500", "funds", "fundamentals", "insiders")
+BULK_ORDER = ("tickers", "stocks", "actions", "metrics", "sp500", "funds", "fundamentals", "insiders", "sf3")
 
 
 def _tickers_from_args(args, conn):
@@ -109,7 +109,7 @@ def main(argv=None):
     p_ff.add_argument("--db", default=None)
 
     p_blk = sub.add_parser("load-bulk", help="Load a downloaded Sharadar bulk zip (tickers/stocks/funds/actions/metrics/sp500/fundamentals).")
-    p_blk.add_argument("table", choices=["tickers","stocks","funds","actions","metrics","sp500","fundamentals","insiders"])
+    p_blk.add_argument("table", choices=["tickers","stocks","funds","actions","metrics","sp500","fundamentals","insiders","sf3"])
     p_blk.add_argument("--file", required=True, help="path to the .csv.zip")
     p_blk.add_argument("--db", default=None)
 
@@ -172,6 +172,10 @@ def main(argv=None):
         ins_min, ins_max = conn.execute(
             "SELECT MIN(filingdate), MAX(filingdate) FROM insider_transactions").fetchone()
         print(f"insider_trades: {n_ins} rows ({ins_min or '-'} -> {ins_max or '-'})")
+        n_io = conn.execute("SELECT COUNT(*) FROM institutional_ownership").fetchone()[0]
+        io_min, io_max = conn.execute(
+            "SELECT MIN(calendardate), MAX(calendardate) FROM institutional_ownership").fetchone()
+        print(f"inst_ownership: {n_io} rows ({io_min or '-'} -> {io_max or '-'})")
     elif args.command == "update-universe":
         n = update_universe(conn)
         print(f"Stored {n} universe tickers.")
@@ -255,7 +259,8 @@ def main(argv=None):
         from . import bulkload as BL
         fn = {"tickers": BL.load_tickers, "stocks": BL.load_stocks, "funds": BL.load_funds,
               "actions": BL.load_actions, "metrics": BL.load_metrics, "sp500": BL.load_sp500,
-              "fundamentals": BL.load_fundamentals, "insiders": BL.load_insiders}[args.table]
+              "fundamentals": BL.load_fundamentals, "insiders": BL.load_insiders,
+              "sf3": BL.load_institutional_ownership}[args.table]
         n = fn(args.file, conn)
         print(f"Loaded {n} rows into {args.table}.")
     elif args.command == "optimize-db":

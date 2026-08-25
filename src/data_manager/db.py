@@ -406,6 +406,23 @@ CREATE TABLE IF NOT EXISTS insider_transactions (
 CREATE INDEX IF NOT EXISTS idx_insider_ticker ON insider_transactions(ticker, filingdate);
 CREATE INDEX IF NOT EXISTS idx_insider_date ON insider_transactions(filingdate);
 CREATE INDEX IF NOT EXISTS idx_insider_code ON insider_transactions(transactioncode);
+
+-- SF3: 13F institutional-ownership holdings (Sharadar sf3 / holdings bulk zip).
+-- One row per (ticker, quarter-end, investor, security type). The vendor
+-- `investorid` sticky 6-char code is stored as investorname; the quarter-end
+-- `date` is stored as calendardate. `value` is USD millions, `units` is
+-- thousands of units.
+CREATE TABLE IF NOT EXISTS institutional_ownership (
+    ticker          TEXT,
+    calendardate    TEXT,   -- quarter-end (vendor 'date')
+    investorname    TEXT,   -- sticky 6-char investor code (vendor 'investorid')
+    securitytype    TEXT,   -- SHR/FND/CLL/PUT/WNT/DBT/PRF/...
+    units           REAL,   -- thousands of units
+    value           REAL,   -- USD millions
+    PRIMARY KEY (ticker, calendardate, investorname, securitytype)
+);
+CREATE INDEX IF NOT EXISTS idx_instown_caldate ON institutional_ownership(calendardate);
+CREATE INDEX IF NOT EXISTS idx_instown_ticker ON institutional_ownership(ticker, calendardate);
 """
 
 

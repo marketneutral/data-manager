@@ -2381,5 +2381,53 @@
     "definition": "The record number for a particular owner and filing date; which forms part of the key for the record."
    }
   ]
+ },
+ "institutional_ownership": {
+  "origin": "RAW (sf3 zip; Sharadar SF3, 13F institutional ownership)",
+  "key": "(ticker, calendardate, investorname, securitytype)",
+  "columns": [
+   {
+    "name": "calendardate",
+    "type": "TEXT",
+    "pk": 1,
+    "unit": "date",
+    "definition": "The calendar date field represents the last day of the calendar quarter."
+   },
+   {
+    "name": "investorname",
+    "type": "TEXT",
+    "pk": 1,
+    "unit": "text",
+    "definition": "A sticky 6-character code uniquely identifying the institutional investor. Used as the InvestorName product key on SF3/SF3B."
+   },
+   {
+    "name": "securitytype",
+    "type": "TEXT",
+    "pk": 1,
+    "unit": "text",
+    "definition": "The available options to filter the SecurityType field are as follows: [SHR] Common Shares [FND] Fund Units [CLL] Call Options [PUT] Put Options [WNT] Warrants [DBT] Debt [PRF] Preferred Shares [UND] Unidentified Security Type"
+   },
+   {
+    "name": "ticker",
+    "type": "TEXT",
+    "pk": 1,
+    "unit": "text",
+    "definition": "The ticker is a unique identifier for a security in the database. Where a company is delisted and the ticker subsequently recycled for use by a different company; we utilise that ticker for the currently active company and append a number to the ticker of the delisted company. The ACTIONS table provides a record of historical ticker changes."
+   },
+   {
+    "name": "units",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "thousands of units",
+    "definition": "The number of units in the current line item. Reported in thousands of units (integer, 0 decimal places)."
+   },
+   {
+    "name": "value",
+    "type": "REAL",
+    "pk": 0,
+    "unit": "USD millions",
+    "definition": "The total USD value of the current line item. Reported in USD millions to 1 decimal place."
+   }
+  ]
  }
 }
