@@ -280,6 +280,13 @@ same (ticker, quarter, investor, class), the loader collapses on the key.
   31). This is the reporting quarter-end, **not** the filing date (13F filings
   lag by up to ~45 days), so for a point-in-time signal treat the holding as
   known only once the quarter has ended **and** the form is filed.
+* **VERIFIED (2026-08-25):** the vendor does **NOT** add the filing lag. Sharadar's
+  data dictionary describes `calendardate` as "the last day of the calendar
+  quarter" (pure period date). EDGAR spot-check (Berkshire 13F-HR): the
+  2023-12-31 quarter-end holdings were **filed 2024-02-14 (45 days later)**; the
+  stored AAPL 2023-12-31 SHR row (905,560 units = 905.56M sh, value 174,347.5)
+  matches EDGAR's infotable **exactly**. So treat holdings as knowable only at
+  quarter-end + ~45d; do **not** add a second lag.
 * **`investorname`** is the vendor's sticky 6-char institutional investor code
   (vendor column `investorid`; e.g. `MARKOW`, `WASHI2`). It is NOT a readable
   name — join/lookup investor identity elsewhere if names are needed.
