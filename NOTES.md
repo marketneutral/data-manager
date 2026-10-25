@@ -1,5 +1,18 @@
 # Data Manager Notes (Sharadar era)
 
+## Point-in-time audit, pit-audit, accessors (2026-10-25)
+
+- **Audit (EDGAR + vendor cross-checks):** SF1 AR `date` = EDGAR's original 10-Q/10-K filing date on
+  98.8% of 3,304 rows (60 random companies, all eras; 0.09% earlier). AR values = the original filing
+  on 99.9% of 4,857 rows; of 152 periods later restated, SF1 kept the original on 99.3%, the
+  restatement on 0.0%. Classifications have no history; corporate actions and S&P changes are dated
+  on completion/effective dates. Details in AGENTS.md, "Point-in-time contract".
+- **Fixed:** `universe_pit` bridged *failing* quotes for up to 10 days on the last passing profile
+  (LEHMQ a $2.5B member at $0.05): now a failing quote ends membership; −359,487 member-days (2.7%).
+  `fundamentals` and `quarterly_statements` gain `filing_date`.
+- **New:** `data-manager pit-audit` (10 invariants, ledger `pit_audit_runs`, run by bulk-update);
+  `data_manager.pit` accessors. Freshness: prices end 2026-08-11 (bulk-update not run since).
+
 ## PIT shares and market cap fixed (2026-10-25)
 
 - **Bug:** `universe_pit.mcap` (and its $300M screen) was `close × shareswa`. SF1 share counts are

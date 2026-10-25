@@ -416,7 +416,9 @@ on Sundays; Dec 31 + 180 days is a weekend in some years).
      moved forward together.
    * Spot check a well-known name (AAPL last close sane; 2026 profile
      ≈ live price, 1998-01-14 ≈ $19.75 — the fixed-profile fingerprint).
-   * `uv run pytest -q` (106 tests, incl. the PIT profile and PIT-shares regressions).
+   * `uv run pytest -q` (121 tests, incl. the PIT profile, PIT-shares and pit-audit regressions).
+   * `uv run data-manager pit-audit` must report no `error` (bulk-update runs it and fails on
+     one); results accumulate in `pit_audit_runs`. See "Point-in-time contract".
 5. Cadence: the bulk zips are daily; a morning `bulk-update` + `optimize-db`
    keeps the warehouse current. `bulk-fromzero` is the full rebuild path
    (downloads everything, wipes, loads, derives, PIT, optimizes).

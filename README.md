@@ -175,6 +175,7 @@ data-manager update-ratios --all [--force] [--ticker A,B]
 data-manager update-sp500                              S&P500 membership
 data-manager update-french-factors [--force]          Ken French daily factor returns (3F/5F/Mom/ST/LT)
 data-manager build-shares-pit                          derive shares_pit (sf1 shares / later splits)
+data-manager pit-audit [--no-record]                   point-in-time invariants on the live warehouse; exit 1 on error
 data-manager build-universe-pit --history              rebuild universe_pit for every trading day
 data-manager enrich-cik | enrich-figi | enrich-sic     legacy SEC/OpenFigi enrichment
 ```
