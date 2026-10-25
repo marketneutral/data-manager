@@ -184,13 +184,14 @@ der = pd.DataFrame([
  ["fundamentals", "sf1 ARY rows", "Piotroski F-Score: 9 binary tests (ROA, CFO, \u0394ROA, accruals, \u0394leverage, \u0394liquidity, equity issuance, \u0394gross margin, \u0394asset turnover) + f_score 0–8"],
  ["quarterly_statements", "sf1 ARQ rows", "13-column quarterly statement mirror (income, balance, cash-flow plus ROA/CFO) from the ARQ rows"],
  ["ratios", "sf1 MRY rows", "latest-calendardate MRY row → trailing PE, fwd PE (NULL from SF1), P/B, P/S, ROE/ROA, margins, D/E, current ratio, div yield, EV multiples"],
- ["universe_pit", "securities_master + prices + sf1 (ARQ/ARY)", "point-in-time investable universe for every trading day; §6 details the algorithm and its 2026-08-12 fix"],
+ ["shares_pit", "sf1 ARQ/ARY + corporate_actions splits", "point-in-time shares outstanding in each day's as-traded units: sharesbas × sharefactor (else shareswa) ÷ the splits after the date; a row per filing and per split ex-date (2026-10-25)"],
+ ["universe_pit", "securities_master + prices + shares_pit", "point-in-time investable universe for every trading day; §6 details the algorithm and its 2026-08-12 and 2026-10-25 fixes"],
 ]).rename(columns={0: "table", 1: "built from", 2: "construction"})
 der
 ```
 
 **Rebuild map** (all local, no API): `build-piotroski` / `build-quarterly` /
-`build-ratios` / `build-universe-pit [--history]` under `data-manager`; a from-zero
+`build-ratios` / `build-shares-pit` / `build-universe-pit [--history]` under `data-manager`; a from-zero
 warehouse rebuild is `bulk-fromzero` (downloads the zips once, loads, derives,
 builds PIT, optimizes).
 
@@ -509,6 +510,9 @@ it.
 
 ## The look-ahead question — is `adjustment` safe for PIT backtests?
 
+(The same trap, in SF1 share counts and per-share fields, is covered at the end of
+this subsection.)
+
 This is the subsection that matters most if you trade on this data. The
 "embeds future events" warning is precise in a way that admits an exact
 remedy — here is the whole argument, slowly, then the fix.
@@ -567,7 +571,7 @@ adjusted-PIT(t; D) = close(t) × adjustment(t) / adjustment(D)
 At `t = D` this equals the as-traded close by construction; at `t < D` it
 folds in exactly the splits and dividends inside `(t, D]` and nothing
 after. The report's accessor `universe.adjusted_prices(..., asof=D)` does
-this for you (and tests pin the behaviour; 88 green). If you read SQL
+this for you (and tests pin the behaviour). If you read SQL
 directly, rebase with `adjustment / (SELECT adjustment FROM prices WHERE
 ticker=? AND date<=? ORDER BY date DESC LIMIT 1)`.
 
@@ -639,6 +643,15 @@ The old advice — "rebuild adjustments only from events known by date D" —
 is still true, but it is now *exact and cheap*: the rebuild is a division
 by the factor already stored at `D`. Nothing in the warehouse needs a new
 column or a maintenance job for this.
+
+**The same look-ahead in SF1.** Sharadar restates SF1 share counts and per-share
+fields for every split after the filing, exactly as `adjustment` folds in later events:
+the levels of `price`, `eps`, `epsdil`, `bvps`, `dps`, `sps`, `fcfps`, `tbvps`,
+`sharesbas`, `shareswa` and `shareswadil` are in the latest share units. Ranking stocks
+on them imports future splits: a low restated price or book value per share marks a stock
+that will split, a past winner. Ratios between them, and `marketcap`, are split-invariant.
+To put a level on the as-of basis, multiply per-share fields by (and divide share counts
+by) the `split_factor` of the matching `shares_pit` row (§6).
 
 # SF1 fundamentals: columns and reporting dimensions
 
@@ -731,8 +744,13 @@ Notes on semantics (verified from vendor docs + live rows):
   (AAPL 1999 `assets` = 5.44B exactly).
 * **FX.** `*usd` fields are USD-normalized versions of the same line item
   (`revenueusd`, `ebitusd`, …); `fxusd` is the FX rate applied.
-* **Shares.** `shareswa` (weighted avg) and `sharesbas` (basic) are used for
-  PIT market cap in `universe_pit` (`price × shareswa`, ARQ/ARY ≤ date).
+* **Shares and per-share fields are restated for later splits.** `sharesbas`,
+  `shareswa`, `shareswadil` and every per-share field (`price`, `eps`, `epsdil`, `bvps`,
+  `dps`, `sps`, `fcfps`, `tbvps`) are served in the *latest* share units: AAPL's
+  2014-04-24 filing shows 24.1B shares, EPS 0.417 and price 20.28 (the stock traded near
+  $567 and reported EPS $11.62, before 7:1 in 2014 and 4:1 in 2020). Ratios between them
+  (`pe`, `pb`) and `marketcap` are split-invariant. PIT market cap is
+  `close × shares_pit.shares` (§6), never `close × shareswa`.
 * **Valuation blanks.** `pe1`/`ps1` are forward-looking (next-period);
   SF1 does **not** carry `forward_pe` or `beta` → those stay NULL in
   `ratios` (documented limitation).
@@ -744,10 +762,11 @@ Notes on semantics (verified from vendor docs + live rows):
 `universe_pit` is the locally derived investable universe — one row per
 (trading day, member) for **7,187 trading days (1998-01-14 → 2026-08-11)**.
 Algorithm (per ticker, no remote requests): walk its price rows keeping a
-rolling 20-session dollar-volume window and a pointer to the latest
-as-reported shares (SF1 ARQ/ARY `date ≤ row date`); a price row is *valid*
-when as-traded close ≥ $2, rolling avg $volume ≥ $5M with ≥ 10 sessions,
-and PIT mcap = close × shares ≥ $300M. Valid rows merge into runs that
+rolling 20-session dollar-volume window and a pointer into its point-in-time
+share counts (`shares_pit`: the latest SF1 ARQ/ARY filing `date ≤ row date`,
+divided by the splits after the row date); a price row is *valid* when as-traded
+close ≥ $2, rolling avg $volume ≥ $5M with ≥ 10 sessions, and PIT mcap =
+close × PIT shares ≥ $300M. A rebuild deletes the rows in its window first. Valid rows merge into runs that
 extend at most `max_quote_age` = 10 calendar days past the last fresh quote,
 then expand onto the global trading calendar.
 
@@ -761,6 +780,86 @@ display(Markdown(
     "member day carries the **most recent valid quote ≤ that day** (regression-tested; "
     "tests/test_db.py). All PIT numbers in this section use the rebuilt table."))
 ```
+
+## Point-in-time shares and market cap (2026-10-25 fix)
+
+**What was wrong.** Until 2026-10-25 the market cap in `universe_pit` (and its $300M
+screen) was `close × shareswa`. `close` is as-traded, but SF1 restates share counts for
+every split *after* the filing, so the product was too large by every later split: AAPL
+was a $15.8T company on 2014-06-06 and a $2.3T one the next trading day. Because stocks
+split after they rise, the error leaked the future into membership: names that would
+later split passed the $300M screen early, and names that would later reverse-split were
+kept out. `shareswa` is also the quarter's weighted average, which lags issuance (IPOs,
+SPAC mergers). And a rebuild only upserted, so a (day, name) that stopped qualifying
+was never removed.
+
+**The fix.** `shares_pit` holds each name's shares outstanding in that day's as-traded
+units: the filing's period-end basic shares × the ADR share factor (`sharesbas ×
+sharefactor`, the vendor's own `marketcap` basis; `shareswa` only where `sharesbas` is
+missing), divided by the product of the split ratios with ex-date after the date. It has
+a row at every filing and every split ex-date. Both universe builders read it, and
+rebuilds clear their window. Measured on the rebuild against the pre-fix table: +100,202
+and −72,338 member-days of 13.49M (1.3%); removals dominate before 2004 (the future-split
+lookahead), additions after 2019 (period-end instead of weighted-average shares).
+
+```{python}
+#| label: pit_shares_aapl
+#| fig-width: 8.5
+#| fig-height: 3.8
+px = q("SELECT date, close FROM prices WHERE ticker='AAPL' AND date BETWEEN '2012-01-01' AND '2021-12-31' ORDER BY date")
+px["date"] = pd.to_datetime(px["date"])
+wa = q("SELECT date, shareswa FROM sf1 WHERE ticker='AAPL' AND dimension='ARQ' AND date <= '2021-12-31' ORDER BY date")
+wa["date"] = pd.to_datetime(wa["date"])
+sp = q("SELECT from_date, shares FROM shares_pit WHERE ticker='AAPL' ORDER BY from_date")
+sp["from_date"] = pd.to_datetime(sp["from_date"])
+m = pd.merge_asof(px, wa, on="date")
+m = pd.merge_asof(m, sp.rename(columns={"from_date": "date"}), on="date")
+m["old"] = m["close"] * m["shareswa"] / 1e9
+m["new"] = m["close"] * m["shares"] / 1e9
+fig, ax = plt.subplots(figsize=(8.5, 3.4))
+ax.plot(m["date"], m["old"], color=GRAY, lw=1.0, label="close × shareswa (pre-fix)")
+ax.plot(m["date"], m["new"], color=PRIMARY, lw=1.2, label="close × shares_pit (fixed)")
+for d, lab in [("2014-06-09", "7:1"), ("2020-08-31", "4:1")]:
+    ax.axvline(pd.Timestamp(d), color=RED, lw=0.7, ls=(0, (3, 3)))
+    ax.annotate(f"split {lab}", (pd.Timestamp(d), ax.get_ylim()[1] * 0.6), color=RED, fontsize=8,
+                xytext=(4, 0), textcoords="offset points")
+ax.set_yscale("log"); ax.set_ylabel("market cap, $B (log)")
+ax.set_title("AAPL market cap: the restated share count overstates it by every later split")
+ax.legend(frameon=False, fontsize=8, loc="upper left"); ax.grid(axis="y", alpha=.25)
+plt.tight_layout(); plt.show()
+```
+
+```{python}
+#| label: pit_shares_checks
+spl = q("SELECT ticker, date FROM corporate_actions WHERE action='split' AND CAST(value AS REAL) > 0")
+# one scan of the split names' member days, then the day before and the day of each split
+um = q("""SELECT ticker, as_of, mcap FROM universe_pit
+          WHERE ticker IN (SELECT DISTINCT ticker FROM corporate_actions WHERE action = 'split')""")
+um = um.sort_values(["ticker", "as_of"])
+um["prev"] = um.groupby("ticker")["mcap"].shift(1)
+cont = spl.merge(um, left_on=["ticker", "date"], right_on=["ticker", "as_of"])[["prev", "mcap"]].dropna()
+cont.columns = ["before", "after"]
+flat = float((np.abs(np.log(cont["before"] / cont["after"])) < np.log(1.15)).mean())
+rec = q("""SELECT u.mcap AS pit, s.marketcap AS vendor FROM sf1 s
+           JOIN universe_pit u ON u.ticker = s.ticker AND u.as_of = s.date
+           WHERE s.dimension = 'ARQ' AND s.marketcap > 0""")
+lr = np.abs(np.log(rec["pit"] / rec["vendor"]))
+fld = q("SELECT share_field, COUNT(*) n FROM shares_pit GROUP BY share_field")
+nsp = q("SELECT COUNT(*) n, COUNT(DISTINCT ticker) t FROM shares_pit").iloc[0]
+pd.DataFrame([
+    ["shares_pit rows / names", f"{fmt(nsp['n'])} / {fmt(nsp['t'])}", "a row per filing and per split ex-date"],
+    ["share source", ", ".join(f"{r.share_field} {fmt(r.n)}" for r in fld.itertuples()), "sharesbas × sharefactor unless sharesbas is missing"],
+    ["split days with mcap on both sides", fmt(len(cont)), ""],
+    ["… mcap within 15% across the split", f"{flat:.1%}", "pre-fix: 9.6% (93.6% fell by the split ratio)"],
+    ["ARQ report dates matched to a member day", fmt(len(rec)), ""],
+    ["… PIT mcap within 1% of SF1 marketcap", f"{(lr < np.log(1.01)).mean():.1%}", "SF1 marketcap is the vendor's own, computed at the filing date"],
+    ["… within 5%", f"{(lr < np.log(1.05)).mean():.1%}", "pre-fix: 75.2%"],
+], columns=["check", "value", "note"])
+```
+
+The Sharadar `DAILY` table (not ingested; same subscription) agrees: its daily
+`marketcap` for AAPL around the 2014 split equals `close × shares_pit` to the
+decimal ($556.1B on 06-06, $565.0B on 06-09).
 
 ```{python}
 #| label: pit_series
