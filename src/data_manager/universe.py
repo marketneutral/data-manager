@@ -678,12 +678,12 @@ def build_piotroski(conn=None) -> int:
             conn.execute(
                 "INSERT OR REPLACE INTO fundamentals "
                 "(ticker, fiscal_year, roa, cfo, d_roa, accruals, d_leverage,"
-                " d_liquidity, equity_issuance, d_gross_margin, d_asset_turnover, f_score)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                " d_liquidity, equity_issuance, d_gross_margin, d_asset_turnover, f_score, filing_date)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (t, f["fiscal_year"], f.get("roa"), f.get("cfo"), f.get("d_roa"),
                  f.get("accruals"), f.get("d_leverage"), f.get("d_liquidity"),
                  f.get("equity_issuance"), f.get("d_gross_margin"),
-                 f.get("d_asset_turnover"), f.get("f_score")))
+                 f.get("d_asset_turnover"), f.get("f_score"), f.get("filing_date")))
         total += len(fund)
         conn.commit()
     return total
@@ -703,11 +703,11 @@ def build_quarterly(conn=None) -> int:
                 "INSERT OR REPLACE INTO quarterly_statements "
                 "(ticker, period, net_income, revenue, gross_profit, operating_cash_flow,"
                 " total_assets, total_liabilities, current_assets, current_liabilities,"
-                " shares_out, roa, cfo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " shares_out, roa, cfo, filing_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (t, r["period"], r["net_income"], r["revenue"], r["gross_profit"],
                  r["operating_cash_flow"], r["total_assets"], r["total_liabilities"],
                  r["current_assets"], r["current_liabilities"], r["shares_out"],
-                 r["roa"], r["cfo"]))
+                 r["roa"], r["cfo"], r.get("filing_date")))
         total += len(q)
         conn.commit()
     return total
@@ -975,9 +975,11 @@ def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
         # rolling window over sessions (rows are trading sessions for this ticker)
         wsum, wct, wq = 0.0, 0, []
         valid = []          # (price_row_date, last_close, mcap, dvol_avg, dvol_ct)
+        priced = []         # every session with a quote, valid or not
         for d, close, volume in prices:
             if d < (trading[0] if trading else "0000") or close is None:
                 continue
+            priced.append(d)
             while si < len(shares) and shares[si][0] <= d:
                 si += 1
             swa = shares[si - 1][1] if si else None
@@ -995,10 +997,22 @@ def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
                 valid.append((d, close, close * swa, dv, wct))
         if not valid:
             continue
-        # merge validity runs: membership days for row i = [d_i, min(d_{i+1}, d_i+max_quote_age)]
+        # merge validity runs. A valid row's membership runs until the name's next
+        # quoted session: through it if that session is valid too, up to the day
+        # before it if it fails the screens (a failing quote ends membership; only
+        # a gap in quotes is bridged), and at most max_quote_age calendar days.
+        # Before 2026-10-25 runs went to the next *valid* row, so failing quotes were
+        # bridged on a stale profile (LEHMQ was a $2.5B member at $0.05 in 2008-09).
+        valid_days = {v[0] for v in valid}
         runs = []   # each: [run_start, run_end, [valid tuples inside the run]]
         for i, (d, close, mcap, dv, dct) in enumerate(valid):
-            nxt = valid[i + 1][0] if i + 1 < len(valid) else (last or trading[-1])
+            k = bisect.bisect_right(priced, d)
+            if k == len(priced):                       # no later quote: bridge the gap
+                nxt = last or trading[-1]
+            elif priced[k] in valid_days:
+                nxt = priced[k]
+            else:                                      # next quote fails: stop the day before it
+                nxt = trading[bisect.bisect_left(trading, priced[k]) - 1]
             end = min(nxt, _add_days(d, max_quote_age))  # calendar-day cap
             if runs and runs[-1][1] >= d:
                 runs[-1][1] = max(runs[-1][1], end)

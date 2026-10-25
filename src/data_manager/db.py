@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS quarterly_statements (
     net_income REAL, revenue REAL, gross_profit REAL, operating_cash_flow REAL,
     total_assets REAL, total_liabilities REAL, current_assets REAL, current_liabilities REAL,
     shares_out REAL, roa REAL, cfo REAL,
+    filing_date TEXT,   -- SEC filing date of the ARQ row: the first day the figures were known
     PRIMARY KEY (ticker, period)
 );
 
@@ -390,6 +391,7 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     d_gross_margin  REAL,
     d_asset_turnover REAL,
     f_score         INTEGER,
+    filing_date     TEXT,   -- SEC filing date of the fiscal year's ARY row: the first day it was known
     PRIMARY KEY (ticker, fiscal_year)
 );
 
@@ -490,6 +492,11 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
         conn.execute("ALTER TABLE shares_pit ADD COLUMN share_field TEXT")
     except sqlite3.OperationalError:
         pass
+    for table in ("fundamentals", "quarterly_statements"):
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN filing_date TEXT")
+        except sqlite3.OperationalError:
+            pass
 
     conn.commit()
     return conn

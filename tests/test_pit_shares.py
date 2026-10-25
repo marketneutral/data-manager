@@ -152,3 +152,45 @@ def test_connect_adds_share_field_to_an_existing_shares_pit(tmp_path):
     conn = db.connect(p)
     cols = {r[1] for r in conn.execute("PRAGMA table_info(shares_pit)")}
     assert "share_field" in cols
+
+
+def test_failing_quote_ends_membership_that_day(tmp_path):
+    """A quote that fails the screens ends membership; only a gap in quotes is bridged (LEHMQ 2008-09)."""
+    conn = db.connect(tmp_path / "fail.db")
+    days = ["2008-09-%02d" % d for d in (2, 3, 4, 5, 8, 9, 10, 11, 12, 15, 16, 17, 18, 19, 22, 23)]
+    for t in ("BUST", "GAPPY"):
+        conn.execute('INSERT INTO securities_master (ticker, category, exchange, isdelisted, sector, industry,'
+                     ' firstpricedate, lastpricedate, name, permaticker, "table") VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                     (t, "Domestic Common Stock", "NYSE", "N", "Financial Services", "Banks", days[0], days[-1], t, t, "stocks"))
+        _filing(conn, t, "2008-08-01", 10_000_000)
+    for d in days:      # BUST trades at $40 until 09-12, then $0.30 (fails the $2 floor) every day after
+        _price(conn, "BUST", d, 40.0 if d <= "2008-09-12" else 0.30)
+    for d in days:      # GAPPY trades at $40 but has no quotes 09-15..09-18 (a gap, not a failure)
+        if not ("2008-09-15" <= d <= "2008-09-18"):
+            _price(conn, "GAPPY", d, 40.0)
+    conn.commit()
+    build_universe_pit_history(conn, min_price=2.0, min_mcap=1.0, min_dvol=1.0, lookback=3,
+                               min_dvol_days=1, max_quote_age=10, types=("Domestic Common Stock",))
+    bust = [r[0] for r in conn.execute("SELECT as_of FROM universe_pit WHERE ticker='BUST' ORDER BY as_of")]
+    assert bust[-1] == "2008-09-12" and "2008-09-15" not in bust
+    gappy = {r[0] for r in conn.execute("SELECT as_of FROM universe_pit WHERE ticker='GAPPY'")}
+    assert {"2008-09-15", "2008-09-16", "2008-09-17", "2008-09-18"} <= gappy      # bridged on the last quote
+    conn.close()
+
+
+def test_derived_fundamentals_carry_the_filing_date(tmp_path):
+    """fundamentals and quarterly_statements record when each row became known (its SF1 filing date)."""
+    from data_manager.universe import build_piotroski, build_quarterly
+    conn = db.connect(tmp_path / "fund.db")
+    _stock(conn, "FUND")
+    for dim, cal, rp, filed in [("ARY", "2012-12-31", "2012-12-31", "2013-02-27"), ("ARY", "2013-12-31", "2013-12-31", "2014-02-26"),
+                                ("ARQ", "2013-12-31", "2013-12-31", "2014-02-26")]:
+        conn.execute("INSERT INTO sf1 (ticker, dimension, calendardate, date, reportperiod, netinc, assets, ncfo,"
+                     " liabilities, assetsc, liabilitiesc, shareswa, gp, revenue) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                     ("FUND", dim, cal, filed, rp, 10.0, 100.0, 12.0, 40.0, 30.0, 20.0, 5.0, 8.0, 50.0))
+    conn.commit()
+    build_piotroski(conn); build_quarterly(conn)
+    assert dict(conn.execute("SELECT fiscal_year, filing_date FROM fundamentals WHERE ticker='FUND'").fetchall()) == {
+        2012: "2013-02-27", 2013: "2014-02-26"}
+    assert conn.execute("SELECT filing_date FROM quarterly_statements WHERE ticker='FUND'").fetchone()[0] == "2014-02-26"
+    conn.close()
