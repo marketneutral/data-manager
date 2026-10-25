@@ -339,6 +339,40 @@ carry today's profile, not its 1998 one; regression-tested). Index:
 `idx_pit_asof` — always filter by `as_of` first; do not aggregate thousands
 of members across all days without the as_of predicate.
 
+## Point-in-time contract (read before any backtest)
+
+A value is point-in-time only if it was **known on the decision date, in that day's units**.
+For each table: the column that says when a row became known, what its levels are in, what is
+safe, and the remedy for what is not. Audited 2026-10-25 against EDGAR and the vendor's own
+numbers; `data-manager pit-audit` re-checks the invariants marked ✓ after every bulk update.
+Prefer the accessors in `data_manager.pit` (`pit_members`, `pit_market_cap`, `pit_fundamentals`,
+`pit_shares`, `split_factor_after`) to hand-written joins: they take any calendar date and apply a
+fact from its knowledge date onward.
+
+| table | known on | levels are in | safe | not safe → remedy |
+|---|---|---|---|---|
+| `prices.close/open/high/low/volume` | `date` (as-traded) | that day's units | levels, $ thresholds, dollar volume | — |
+| `prices.adjustment` | `date` | latest units (folds in every later split/dividend) | return ratios | levels as of D → rebase `adj(t)/adj(D)` (§Prices) |
+| `sf1` ARQ/ARY/ART | `date` = SEC filing date (98.8% exactly EDGAR's; 0.09% earlier) | **dollar totals: as filed. Per-share fields and share counts: latest share units** | dollar totals; ratios between fields; `marketcap`, `pe`, `pb`, `ps` (vendor-computed at `date`) | per-share/share-count **levels** (`price`, `eps`, `epsdil`, `epsusd`, `bvps`, `dps`, `sps`, `fcfps`, `tbvps`, `sharesbas`, `shareswa`, `shareswadil`) → `pit_fundamentals(split_basis=True)` |
+| `sf1` AR values | | the **original** filing's (99.9%; 99.3% of later-restated periods keep the original, 0.0% the restatement) | as-of use with `date <= D` | — |
+| `sf1` MRQ/MRY/MRT | indexed to the report period | **restated after the fact** | research on final numbers only | any backtest → use AR* (the accessor refuses MR* unless `allow_restated=True`) |
+| `sf1` `roa`, `roe`, `ros`, `roic`, averages | | empty in ARQ | use the ART/ARY row of the same filing | — |
+| `shares_pit` ✓ | `from_date` (filing date or split ex-date) | that day's units | `close × shares` = PIT market cap | — |
+| `universe_pit` ✓ | `as_of` | profile is that day's quote | membership and profile on `as_of` | `sector`/`industry` are the **latest** classification on every day (no history exists) |
+| `fundamentals`, `quarterly_statements` ✓ | `filing_date` (added 2026-10-25) | as filed (`shares_out` mirrors restated `shareswa`) | as-of on `filing_date` | a fixed lag after period end (2.1% of annual filings come out >180 days after Dec 31) → use `filing_date` |
+| `ratios`, `metrics` | snapshot date | latest | current screens | **never history** — snapshots, not point-in-time |
+| `securities_master` | current | latest | identity, current labels | historical classification → none available |
+| `corporate_actions` | `date` = effective/completion date (split ex-date; acquisition/delisting completion: TWTR 2022-10-27, announced in April; LEHMQ bankruptcy dated its 2008-10-15 delisting) | | splits (ex-date known in advance), events as of completion | an event *signal* at announcement → not in this table |
+| `sp500_membership` | `date` = effective date (TSLA 2020-12-21, announced 2020-11-16) | | membership as of D | index-change announcement signals → not in this table |
+| `insider_transactions` (SF2) | `filingdate` | as-traded | filter `filingdate <= D` | `transactiondate` alone → look-ahead |
+| `institutional_ownership` (SF3) | `calendardate` = quarter end; filed ~45 days later | | `calendardate + 45d <= D` | quarter-end dating → look-ahead |
+| `french_factors` | `date` | — | returns | the Ken French library revises history between releases (no vintages kept) |
+
+**Joins.** An as-of join must carry a fact from its knowledge date to every later date, including
+when the knowledge date is not a trading day. Reindexing a sparse series straight onto trading
+dates silently drops every weekend-dated fact (52/53-week filers' Saturday period ends + a lag land
+on Sundays; Dec 31 + 180 days is a weekend in some years).
+
 ## Gotchas that bite
 
 1. `securities_master` PK is **permaticker**; ticker is unique in practice.
