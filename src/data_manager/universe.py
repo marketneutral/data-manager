@@ -743,6 +743,112 @@ def build_ratios(conn=None) -> int:
     return total
 
 
+# ---- PIT shares outstanding ----
+# SF1 share counts are restated by the vendor for every split after the filing,
+# like SF1 `price`: AAPL's 2014 filings carry ~24.5B shares, about 28x the count
+# then outstanding (7:1 in 2014, 4:1 in 2020). Multiplying them by an as-traded
+# close overstates market cap by every later split and leaks future splits. The
+# count as of day D, in D's as-traded units, is the restated count of the latest
+# filing <= D divided by the product of the split ratios with ex-date after D; it
+# changes at each filing and at each split ex-date.
+#
+# The count is period-end basic shares times the ADR share factor (sharesbas x
+# sharefactor), the vendor's own marketcap basis: close x that count / later splits
+# matches SF1 marketcap within 1% at 99.9% of ARQ report dates, against 71.5% for
+# the quarter's weighted average (shareswa), which lags issuance. shareswa is the
+# fallback when sharesbas is missing.
+
+def pit_share_events(conn, ticker):
+    """Point-in-time share counts for one ticker, oldest first.
+
+    Returns [(from_date, shares, filing_date, restated_shares, split_factor,
+    share_field)], one row per SF1 ARQ/ARY filing and per split ex-date after the
+    first filing; each count holds from its from_date until the next row's. When
+    ARQ and ARY share a filing date, ARQ wins.
+    """
+    import bisect
+    rows = conn.execute(
+        "SELECT date, sharesbas, sharefactor, shareswa FROM sf1 WHERE ticker=?"
+        " AND dimension IN ('ARQ','ARY') ORDER BY date, dimension DESC", (ticker,)).fetchall()
+    filings = []
+    for d, bas, factor, wa in rows:
+        if bas and bas > 0:
+            filings.append((d, bas * (factor if factor and factor > 0 else 1.0), "sharesbas"))
+        elif wa and wa > 0:
+            filings.append((d, wa, "shareswa"))
+    if not filings:
+        return []
+    splits = conn.execute(
+        "SELECT date, CAST(value AS REAL) FROM corporate_actions WHERE ticker=?"
+        " AND action='split' AND CAST(value AS REAL) > 0 ORDER BY date", (ticker,)).fetchall()
+    split_dates = [d for d, _ in splits]
+    after = [1.0] * (len(splits) + 1)          # after[i] = product of ratios of splits[i:]
+    for i in range(len(splits) - 1, -1, -1):
+        after[i] = after[i + 1] * splits[i][1]
+    latest = {}                                 # filing date -> (restated count, field); ARQ last, so it wins
+    for d, n, field in filings:
+        latest[d] = (n, field)
+    starts = sorted(set(latest) | {d for d in split_dates if d > filings[0][0]})
+    events, fi, cur = [], 0, None
+    fdates = sorted(latest)
+    for d in starts:
+        while fi < len(fdates) and fdates[fi] <= d:
+            cur = fdates[fi]
+            fi += 1
+        f = after[bisect.bisect_right(split_dates, d)]   # splits with ex-date after d
+        n, field = latest[cur]
+        events.append((d, n / f, cur, n, f, field))
+    return events
+
+
+def _shares_on(events, dates, day):
+    """Shares outstanding on `day` from pit_share_events (None before the first filing)."""
+    import bisect
+    i = bisect.bisect_right(dates, day)
+    return events[i - 1][1] if i else None
+
+
+def build_shares_pit(conn=None) -> int:
+    """Derive shares_pit (point-in-time shares outstanding) for every stock with SF1 shares."""
+    conn = conn or db.connect()
+    tickers = [r[0] for r in conn.execute(
+        "SELECT DISTINCT ticker FROM sf1 WHERE dimension IN ('ARQ','ARY')"
+        " AND (sharesbas > 0 OR shareswa > 0)")]
+    conn.execute("DELETE FROM shares_pit")
+    n = 0
+    for t in tickers:
+        rows = [(t, *e) for e in pit_share_events(conn, t)]
+        conn.executemany("INSERT INTO shares_pit (ticker, from_date, shares, filing_date,"
+                         " restated_shares, split_factor, share_field) VALUES (?,?,?,?,?,?,?)", rows)
+        n += len(rows)
+    conn.executemany(
+        "INSERT OR REPLACE INTO descriptions "
+        "(table_name, indicator, isfilter, isprimarykey, title, description, unittype) "
+        "VALUES (?,?,?,?,?,?,?)", SHARES_PIT_DESCRIPTIONS)
+    conn.commit()
+    return n
+
+
+SHARES_PIT_DESCRIPTIONS = [
+    ("shares_pit", "ticker", "Y", "Y", "Ticker", "Sharadar ticker (current/last symbol).", "text"),
+    ("shares_pit", "from_date", "Y", "Y", "From date",
+     "First day the count applies: an SF1 ARQ/ARY filing date or a split ex-date. Holds until the next row's from_date.", "text"),
+    ("shares_pit", "shares", "N", "N", "Shares outstanding (point-in-time)",
+     "Shares outstanding as of from_date in that day's as-traded units: restated_shares / split_factor. "
+     "Multiply by the as-traded prices.close for a point-in-time market cap.", "units"),
+    ("shares_pit", "filing_date", "N", "N", "Source filing date",
+     "Date of the SF1 ARQ/ARY row the count comes from (ARQ wins on a shared date).", "text"),
+    ("shares_pit", "restated_shares", "N", "N", "Vendor shares (restated)",
+     "That row's SF1 count as served (sharesbas x sharefactor, or shareswa when sharesbas is missing): "
+     "restated for every split after the filing.", "units"),
+    ("shares_pit", "split_factor", "N", "N", "Later-split factor",
+     "Product of the split ratios (s in s:1) with ex-date after from_date; 1.0 when none.", "ratio"),
+    ("shares_pit", "share_field", "N", "N", "Source share field",
+     "'sharesbas' (period-end basic shares x the ADR sharefactor, the vendor's marketcap basis) or "
+     "'shareswa' (weighted average, used only when sharesbas is missing).", "text"),
+]
+
+
 # ---- PIT universe construction ----
 _PIT_DEFAULT_TYPES = ("Domestic Common Stock", "Domestic Common Stock Primary Class",
                       "Domestic Common Stock Secondary Class")
@@ -756,11 +862,14 @@ def build_universe_pit(conn=None, as_of=None, min_price: float = 2.0,
 
     As of `as_of`: a stock is investable iff it traded recently enough, its last
     as-traded close >= min_price, trailing avg $volume >= min_dvol over the
-    lookback, and PIT market cap (close x latest as-reported shares) >= min_mcap.
+    lookback, and PIT market cap (close x point-in-time shares on the close's
+    date, see pit_share_events) >= min_mcap. Rows already stored for `as_of`
+    are replaced, including names that no longer qualify.
     """
     conn = conn or db.connect()
     as_of = as_of or dt.date.today().isoformat()
     types = types or _PIT_DEFAULT_TYPES
+    conn.execute("DELETE FROM universe_pit WHERE as_of=?", (as_of,))
     placeholders = ",".join("?" * len(types))
     cands = conn.execute(
         "SELECT ticker, category, exchange, isdelisted, sector, industry,"
@@ -787,10 +896,9 @@ def build_universe_pit(conn=None, as_of=None, min_price: float = 2.0,
         dvol_days = len(dvol)
         if dvol_days < min_dvol_days or (sum(dvol) / dvol_days) < min_dvol:
             continue
-        sh = conn.execute(
-            "SELECT shareswa FROM sf1 WHERE ticker=? AND dimension IN ('ARQ','ARY')"
-            " AND date<=? ORDER BY date DESC LIMIT 1", (ticker, as_of)).fetchone()
-        mcap = last_close * sh[0] if (sh and sh[0]) else None
+        events = [e for e in pit_share_events(conn, ticker) if e[2] <= as_of]
+        sh = _shares_on(events, [e[0] for e in events], last_date)
+        mcap = last_close * sh if sh else None
         if mcap is None or mcap < min_mcap:
             continue
         conn.execute(
@@ -813,13 +921,16 @@ def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
 
     Strategy (fast, unlike per-date loops): for each stock, walk its own price
     rows once, keeping a rolling $volume window (last `lookback` sessions) and
-    a pointer to the latest as-reported shares (SF1 ARQ/ARY <= row date).
+    a pointer into its point-in-time share counts (pit_share_events: the latest
+    SF1 ARQ/ARY filing <= row date, divided by the splits after the row date).
     A price row is "valid" when close >= min_price, rolling avg $volume >=
-    min_dvol with >= min_dvol_days sessions, and close*shareswa >= min_mcap.
+    min_dvol with >= min_dvol_days sessions, and close * PIT shares >= min_mcap.
     Membership on any calendar day D requires the most recent valid price row
     <= D to be within max_quote_age calendar days (fresh quote). Validity runs
     are merged and expanded onto the global trading-day calendar, stored in
-    universe_pit(as_of, ticker, ...) -- a row per (day, member).
+    universe_pit(as_of, ticker, ...) -- a row per (day, member). Every stored
+    row in the rebuilt window [start, end] is deleted first, so a (day, name)
+    that no longer qualifies does not survive a rebuild.
 
     Returns the number of member-day rows stored.
     """
@@ -831,6 +942,9 @@ def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
         trading = [d for d in trading if d >= start]
     if end:
         trading = [d for d in trading if d <= end]
+    if trading:
+        conn.execute("DELETE FROM universe_pit WHERE as_of >= ? AND as_of <= ?",
+                     (trading[0], trading[-1]))
     placed = ",".join("?" * len(types))
     cands = conn.execute(
         "SELECT ticker, category, exchange, isdelisted, sector, industry,"
@@ -856,9 +970,7 @@ def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
             (ticker,)).fetchall()
         if not prices:
             continue
-        shares = conn.execute(
-            "SELECT date, shareswa FROM sf1 WHERE ticker=? AND dimension IN ('ARQ','ARY')"
-            " AND shareswa IS NOT NULL ORDER BY date", (ticker,)).fetchall()
+        shares = pit_share_events(conn, ticker)
         si = 0
         # rolling window over sessions (rows are trading sessions for this ticker)
         wsum, wct, wq = 0.0, 0, []

@@ -63,7 +63,8 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | ratios | derived (sf1 MRY latest) | ticker | valuation/quality snapshot (forward_pe & beta always NULL — SF1 lacks them) |
 | classifications | derived (GICS map) | ticker | 11 GICS labels — covers only 2,589 iShares-era names (known gap) |
 | universe | derived (iShares IWV) | ticker | legacy R3000 snapshot (superseded by universe_pit) |
-| universe_pit | derived (master+prices+sf1) | (as_of,ticker) | investable membership per trading day |
+| shares_pit | derived (sf1 ARQ/ARY + split actions) | (ticker,from_date) | point-in-time shares outstanding in as-traded units: SF1 `sharesbas × sharefactor` (else `shareswa`) ÷ splits after the date; a row holds until the next `from_date` |
+| universe_pit | derived (master+prices+shares_pit) | (as_of,ticker) | investable membership per trading day |
 | snapshots | ledger | id | per-pull record (source, pulled_at, as_of, row_count) |
 | descriptions | raw (bulk) | (table_name, indicator) | Sharadar's field dictionary: title + sentence-level definition + unit type for every column of every vendor table (373 rows, 17 datasets) |
 
@@ -177,7 +178,27 @@ WHERE table_name = 'SF1' AND indicator = 'revenue';
   `date` as `datekey` for caller compatibility). Do NOT re-introduce a
   blob/lite-column split — this is a storage/query project: serve the
   vendor schema as-is.
-* PIT market cap: `close × shareswa` (ARQ/ARY ≤ date).
+* **PIT market cap: `prices.close × shares_pit.shares`** (the `shares_pit` row with the
+  latest `from_date ≤ D`). **Never `close × shareswa`:** SF1 share counts (`shareswa`,
+  `sharesbas`, ...) are restated by the vendor for every split *after* the filing, exactly like
+  SF1 `price` (AAPL's 2014 filings carry ~24.5B shares, ~28× the count then outstanding, after
+  7:1 in 2014 and 4:1 in 2020). Multiplying them by an as-traded close overstates market cap by
+  every later split and leaks future splits (stocks split after they rise). `shares_pit` divides
+  each filing's count by the splits after the date; it changes at every filing and every split
+  ex-date. The count is **`sharesbas × sharefactor`** (period-end basic shares × the ADR factor,
+  the vendor's own `marketcap` basis), falling back to `shareswa` only where `sharesbas` is
+  missing (`share_field` says which): the weighted average lags issuance (off by >5% for ~8% of
+  filings). Restated counts remain correct for comparisons between periods of the same stock
+  (they share one basis), e.g. the F-Score's equity-issuance test.
+  Verified 2026-10-25 on the full history: `close × shareswa` fell by the split ratio on 94% of
+  2,716 split days and matched SF1 `marketcap` within 5% at only 75% of ARQ report dates;
+  `close × shares_pit` is flat across split days and matches SF1 `marketcap` within 1% at 99.9%.
+* **The same restatement applies to every SF1 per-share and share-count field** (`price`,
+  `eps`, `epsdil`, `bvps`, `dps`, `fcfps`, `sps`, `tbvps`, `shareswa`, `shareswadil`,
+  `sharesbas`): ratios between two of them, or with `marketcap`, are split-invariant, but their
+  *levels* are in the latest share units. Ranking stocks on a level imports future splits; to
+  put a level on the as-of basis, multiply per-share fields by (shares divide by) the
+  `split_factor` of the matching `shares_pit` row.
 * **DO NOT use the SF1 `price` column as an as-traded price / factor.** It is **split-adjusted to forward time**: adjusted for splits/reverse-splits that occur *after* the point-in-time date (e.g. AAPL SF1`price`=106.26 for a period whose genuine traded price was ~$425, i.e. ÷4:1 split that came later; reverse-split penny stocks are distorted by factors 10^9-10^17). Using it to sort/rank cross-sectionally leaks future info (look-ahead) and mis-ranks stocks on true 'cheapness'. For a genuine price-level factor use `prices.close` (as-traded) at the rebalance date; keep `close × adjustment` for *returns* only. Do NOT drop the column (keep the 112-field vendor schema) — just stop using it.
  Banks' `grossmargin`
   ≈ 1.0 and `fcf` structurally negative — expected artifacts.
@@ -307,8 +328,12 @@ same (ticker, quarter, investor, class), the loader collapses on the key.
 
 One row per (trading day, member). Membership iff, **as of that day**:
 Domestic Common Stock (Primary/Second class), as-traded close ≥ $2, trailing
-20-session avg $volume ≥ $5M (≥10 sessions), PIT mcap ≥ $300M, quote ≤ 10
-calendar days old. The stored `price/mcap/dvol_avg/dvol_days` is the **most
+20-session avg $volume ≥ $5M (≥10 sessions), PIT mcap (`close × shares_pit`,
+see SF1 above) ≥ $300M, quote ≤ 10 calendar days old. A rebuild deletes every
+stored row in its window first, so a (day, name) that no longer qualifies does
+not survive (before 2026-10-25 a rebuild only upserted, so stale members could
+persist; and mcap used restated shares, which put names that later split into
+the universe early and kept reverse-split names out). The stored `price/mcap/dvol_avg/dvol_days` is the **most
 recent valid quote ≤ that day** (fixed 2026-08-12 — a continuous name must
 carry today's profile, not its 1998 one; regression-tested). Index:
 `idx_pit_asof` — always filter by `as_of` first; do not aggregate thousands
@@ -357,7 +382,7 @@ of members across all days without the as_of predicate.
      moved forward together.
    * Spot check a well-known name (AAPL last close sane; 2026 profile
      ≈ live price, 1998-01-14 ≈ $19.75 — the fixed-profile fingerprint).
-   * `uv run pytest -q` (96 tests, incl. the PIT profile regression).
+   * `uv run pytest -q` (106 tests, incl. the PIT profile and PIT-shares regressions).
 5. Cadence: the bulk zips are daily; a morning `bulk-update` + `optimize-db`
    keeps the warehouse current. `bulk-fromzero` is the full rebuild path
    (downloads everything, wipes, loads, derives, PIT, optimizes).

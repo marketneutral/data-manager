@@ -145,6 +145,16 @@ raw fraction (0.0042 = 0.42%).
 net_income, revenue, gross_profit, operating_cash_flow, total_assets,
 total_liabilities, current_assets, current_liabilities, shares_out, roa, cfo.
 
+### `shares_pit` — point-in-time shares outstanding (PK: ticker, from_date)
+shares (as-traded units as of `from_date`), filing_date, restated_shares (SF1
+`sharesbas × sharefactor` as served, or `shareswa` where `sharesbas` is missing;
+`share_field` says which), split_factor (product of split ratios after
+`from_date`; `shares = restated_shares / split_factor`). A row holds until the next
+`from_date` (a filing date or a split ex-date). PIT market cap on day D =
+`prices.close(D) × shares` of the latest row with `from_date ≤ D`. SF1 share
+counts alone are restated for later splits and must not be multiplied by an
+as-traded price.
+
 ### `snapshots`
 Provenance: source, pulled_at, as_of, row_count for each universe pull.
 
@@ -164,6 +174,8 @@ data-manager update-quarterly --all [--force] [--ticker A,B]
 data-manager update-ratios --all [--force] [--ticker A,B]
 data-manager update-sp500                              S&P500 membership
 data-manager update-french-factors [--force]          Ken French daily factor returns (3F/5F/Mom/ST/LT)
+data-manager build-shares-pit                          derive shares_pit (sf1 shares / later splits)
+data-manager build-universe-pit --history              rebuild universe_pit for every trading day
 data-manager enrich-cik | enrich-figi | enrich-sic     legacy SEC/OpenFigi enrichment
 ```
 

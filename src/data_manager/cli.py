@@ -23,6 +23,7 @@ from .universe import (
     build_piotroski,
     build_quarterly,
     build_ratios,
+    build_shares_pit,
     build_universe_pit,
     build_universe_pit_history,
     universe_tickers,
@@ -85,6 +86,8 @@ def main(argv=None):
     p_bq.add_argument("--db", default=None)
     p_br = sub.add_parser("build-ratios", help="Local: derive ratio snapshots from the sf1 MRY mirror.")
     p_br.add_argument("--db", default=None)
+    p_bs = sub.add_parser("build-shares-pit", help="Local: derive point-in-time shares outstanding (sf1 shares / later splits).")
+    p_bs.add_argument("--db", default=None)
     p_pit = sub.add_parser("build-universe-pit", help="Construct a PIT investable universe (master+prices+sf1).")
     p_pit.add_argument("--asof", default=None, help="YYYY-MM-DD (default today; ignored with --history).")
     p_pit.add_argument("--history", action="store_true", help="build the universe for EVERY trading day (1998->now)")
@@ -236,6 +239,9 @@ def main(argv=None):
     elif args.command == "build-ratios":
         n = build_ratios(conn)
         print(f"Ratio snapshots derived: {n}.")
+    elif args.command == "build-shares-pit":
+        n = build_shares_pit(conn)
+        print(f"PIT share-count rows derived: {n}.")
     elif args.command == "build-universe-pit":
         types = tuple(args.types.split(",")) if args.types else None
         if args.history:

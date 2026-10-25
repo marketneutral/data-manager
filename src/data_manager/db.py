@@ -361,6 +361,22 @@ CREATE TABLE IF NOT EXISTS universe_pit (
 );
 CREATE INDEX IF NOT EXISTS idx_pit_asof ON universe_pit(as_of);
 
+-- Point-in-time shares outstanding, in each day's as-traded units (derived).
+-- SF1 share counts are restated by the vendor for every split after the filing,
+-- so they cannot be multiplied by an as-traded close. shares = restated_shares /
+-- split_factor, where split_factor is the product of the split ratios with
+-- ex-date after from_date. A row holds from from_date until the next row's.
+CREATE TABLE IF NOT EXISTS shares_pit (
+    ticker          TEXT,
+    from_date       TEXT,   -- first day this count applies (a filing date or a split ex-date)
+    shares          REAL,   -- shares outstanding as of from_date, as-traded units
+    filing_date     TEXT,   -- SF1 ARQ/ARY row (date = filing date) the count comes from
+    restated_shares REAL,   -- that row's sharesbas x sharefactor (else shareswa), as served
+    split_factor    REAL,   -- product of split ratios with ex-date > from_date
+    share_field     TEXT,   -- 'sharesbas' or 'shareswa' (fallback)
+    PRIMARY KEY (ticker, from_date)
+);
+
 CREATE TABLE IF NOT EXISTS fundamentals (
     ticker          TEXT,
     fiscal_year     INTEGER,
@@ -468,6 +484,10 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
         pass
     try:
         conn.execute("ALTER TABLE universe ADD COLUMN lei TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE shares_pit ADD COLUMN share_field TEXT")
     except sqlite3.OperationalError:
         pass
 
