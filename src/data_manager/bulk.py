@@ -163,6 +163,8 @@ def bulk_fromzero(dest_dir: str = DEFAULT_DIR, conn=None, pit_asof: str = None,
         counts["shares_pit"] = build_shares_pit(conn)   # before PIT: the universe reads its definition
     if pit:
         counts["pit"] = build_universe_pit_history(conn)
+        from . import pit_audit                      # point-in-time invariants on the rebuilt warehouse
+        counts["pit_audit"] = pit_audit.run(conn)["status"]
     # optimize so a from-zero rebuild yields a performant database
     from . import dbopt as OP
     OP.optimize_db(conn, vacuum=True, quick=True)
@@ -198,6 +200,8 @@ def bulk_update(dest_dir: str = DEFAULT_DIR, conn=None, tables=None,
         loaded_core["shares_pit"] = build_shares_pit(conn)
     if pit and loaded_core:
         loaded_core["pit"] = build_universe_pit_history(conn)
+        from . import pit_audit                      # point-in-time invariants on the rebuilt warehouse
+        loaded_core["pit_audit"] = pit_audit.run(conn)["status"]
     loaded = loaded_core
     # Ken French daily factor returns (separate source; refreshed every
     # update pass so one command keeps the whole warehouse current —

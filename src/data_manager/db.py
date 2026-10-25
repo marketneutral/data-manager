@@ -367,6 +367,16 @@ CREATE INDEX IF NOT EXISTS idx_pit_asof ON universe_pit(as_of);
 -- so they cannot be multiplied by an as-traded close. shares = restated_shares /
 -- split_factor, where split_factor is the product of the split ratios with
 -- ex-date after from_date. A row holds from from_date until the next row's.
+-- Ledger of point-in-time audit runs (data-manager pit-audit); rows are only ever appended.
+CREATE TABLE IF NOT EXISTS pit_audit_runs (
+    run_at     TEXT,   -- UTC timestamp of the run
+    check_name TEXT,
+    status     TEXT,   -- ok | warn | error
+    value      TEXT,   -- JSON: the measured value
+    detail     TEXT,
+    PRIMARY KEY (run_at, check_name)
+);
+
 CREATE TABLE IF NOT EXISTS shares_pit (
     ticker          TEXT,
     from_date       TEXT,   -- first day this count applies (a filing date or a split ex-date)

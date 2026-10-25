@@ -86,6 +86,9 @@ def main(argv=None):
     p_bq.add_argument("--db", default=None)
     p_br = sub.add_parser("build-ratios", help="Local: derive ratio snapshots from the sf1 MRY mirror.")
     p_br.add_argument("--db", default=None)
+    p_pa = sub.add_parser("pit-audit", help="Check the warehouse's point-in-time invariants; exit 1 on any error.")
+    p_pa.add_argument("--db", default=None)
+    p_pa.add_argument("--no-record", action="store_true", help="do not append the run to pit_audit_runs")
     p_bs = sub.add_parser("build-shares-pit", help="Local: derive point-in-time shares outstanding (sf1 shares / later splits).")
     p_bs.add_argument("--db", default=None)
     p_pit = sub.add_parser("build-universe-pit", help="Construct a PIT investable universe (master+prices+sf1).")
@@ -239,6 +242,11 @@ def main(argv=None):
     elif args.command == "build-ratios":
         n = build_ratios(conn)
         print(f"Ratio snapshots derived: {n}.")
+    elif args.command == "pit-audit":
+        from . import pit_audit
+        res = pit_audit.run(conn, record=not args.no_record)
+        print(f"[pit-audit] overall: {res['status']}")
+        return 1 if res["status"] == "error" else 0
     elif args.command == "build-shares-pit":
         n = build_shares_pit(conn)
         print(f"PIT share-count rows derived: {n}.")
@@ -297,11 +305,17 @@ def main(argv=None):
             counts = B.bulk_fromzero(dest_dir=d, conn=conn, pit_asof=args.asof,
                                      derive=not args.no_derive, pit=not args.no_pit)
             print("FROM-ZERO DONE:", json.dumps(counts))
+            if counts.get("pit_audit") == "error":
+                print("[pit-audit] ERROR: a point-in-time invariant failed; see pit_audit_runs")
+                return 1
         else:
             tabs = [t.strip() for t in args.tables.split(",")] if args.tables else None
             res = B.bulk_update(dest_dir=d, conn=conn, tables=tabs, force=args.force,
                                 derive=not args.no_derive, pit=not args.no_pit, pit_asof=args.asof)
             print("UPDATE DONE: loaded", res["loaded"], "| skipped:", res["skipped"])
+            if res["loaded"].get("pit_audit") == "error":
+                print("[pit-audit] ERROR: a point-in-time invariant failed; see pit_audit_runs")
+                return 1
     return 0
 
 
