@@ -1,5 +1,22 @@
 # Data Manager Notes (Sharadar era)
 
+## PIT shares and market cap fixed (2026-10-25)
+
+- **Bug:** `universe_pit.mcap` (and its $300M screen) was `close × shareswa`. SF1 share counts are
+  restated for every split *after* the filing (like SF1 `price`), so market cap was overstated by
+  every later split (AAPL 2014-06-06: $15.8T) and leaked future splits into membership (names that
+  later split entered early; reverse-split names were kept out). `shareswa` is also the quarter's
+  weighted average, which lags issuance (IPOs, SPACs).
+- **Fix:** new derived table `shares_pit` (point-in-time shares: `sharesbas × sharefactor`, else
+  `shareswa`, divided by the splits after the date; a row per filing and per split ex-date), and
+  both universe builders read it via `pit_share_events`. Rebuilds now delete their window first, so
+  stale members do not survive (previously a rebuild only upserted).
+- **Validation (full history):** PIT mcap matches SF1 `marketcap` within 5% at 99.0% of 214,473 ARQ
+  report dates (was 75.2%), median ratio 1.0000; flat across 97% of split days (was 9.6%).
+  Membership: +100,202 / −72,338 member-days of 13.49M (1.3%); removals dominate before 2004
+  (future-split lookahead), additions after 2019 (period-end vs weighted-average shares).
+- Backup before the rebuild: `~/.prime/agent/data_manager.pre-mcapfix.db`.
+
 ## Fresh start — 2026-08-11 (FMP removed)
 
 - Sharadar is the sole data provider (`SHARADAR_API_KEY` in ~/.env).
