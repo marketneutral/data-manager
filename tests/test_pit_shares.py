@@ -8,8 +8,8 @@ continuous across a split, and a rebuild removes members that no longer qualify.
 import pytest
 
 from data_manager import db
-from data_manager.universe import (build_shares_pit, build_universe_pit,
-                                   build_universe_pit_history, pit_share_events)
+from data_manager.universe import (build_shares_pit, build_split_events, build_universe_pit,
+                                   build_universe_pit_history, pit_share_events, split_events)
 
 DAYS = ["2014-06-%02d" % d for d in (2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 16, 17)]
 
@@ -56,6 +56,7 @@ def c(tmp_path):
     _split(conn, "REV", "2014-06-09", 0.1)
     for d in DAYS:
         _price(conn, "REV", d, 10.0 if d < "2014-06-09" else 100.0)
+    build_split_events(conn)
     conn.commit()
     yield conn
     conn.close()
@@ -194,3 +195,34 @@ def test_derived_fundamentals_carry_the_filing_date(tmp_path):
         2012: "2013-02-27", 2013: "2014-02-26"}
     assert conn.execute("SELECT filing_date FROM quarterly_statements WHERE ticker='FUND'").fetchone()[0] == "2014-02-26"
     conn.close()
+
+
+def test_split_reserved_at_more_precision_counts_once(c):
+    # a refresh re-serves REV's 1:10 split as 0.1000000001: the key includes the value, so both rows are stored
+    _split(c, "REV", "2014-06-09", "0.1000000001")
+    build_split_events(c)
+    assert split_events(c, "REV") == [("2014-06-09", pytest.approx(0.1000000001), 2, "same_date")]
+    assert [e[1] for e in pit_share_events(c, "REV")] == pytest.approx([50_000_000, 5_000_000])
+
+
+def test_split_moved_a_day_counts_once_on_the_price_move(c):
+    # the vendor also serves FWD's 2014-06-09 7:1 split on 06-06; the close drops on 06-09, so that one is kept
+    _split(c, "FWD", "2014-06-06", 7)
+    events = split_events(c, "FWD")
+    assert [(d, r, n, rule) for d, r, n, rule in events] == [("2014-06-09", 7.0, 2, "near_date"), ("2020-08-31", 4.0, 1, "single")]
+
+
+def test_two_same_ratio_splits_confirmed_by_prices_both_count(c):
+    _stock(c, "TWO")
+    _filing(c, "TWO", "2014-05-01", 1_000_000)
+    for d, px in zip(DAYS, [8.0] * 4 + [4.0] * 3 + [2.0] * 5):     # 2:1 on 06-06 and again on 06-11
+        _price(c, "TWO", d, px)
+    _split(c, "TWO", "2014-06-06", 2)
+    _split(c, "TWO", "2014-06-11", 2)
+    assert [(d, rule) for d, _, _, rule in split_events(c, "TWO")] == [("2014-06-06", "price_confirmed"),
+                                                                     ("2014-06-11", "price_confirmed")]
+
+
+def test_conflicting_values_on_one_date_pick_the_price_move(c):
+    _split(c, "REV", "2014-06-09", 0.5)                            # wrong value; the close rose 10x
+    assert split_events(c, "REV") == [("2014-06-09", 0.1, 2, "same_date_conflict")]

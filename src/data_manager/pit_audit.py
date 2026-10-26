@@ -44,9 +44,9 @@ def check_mcap_continuous_across_splits(conn, min_share=0.95):
     rows = conn.execute(
         "WITH m AS (SELECT ticker, as_of, mcap, LAG(mcap) OVER (PARTITION BY ticker ORDER BY as_of) AS prev,"
         "                  LAG(as_of) OVER (PARTITION BY ticker ORDER BY as_of) AS prev_day"
-        "           FROM universe_pit WHERE ticker IN (SELECT DISTINCT ticker FROM corporate_actions WHERE action = 'split'))"
-        " SELECT m.mcap, m.prev FROM m JOIN corporate_actions s ON s.ticker = m.ticker AND s.date = m.as_of"
-        " WHERE s.action = 'split' AND CAST(s.value AS REAL) > 0 AND m.prev_day >= date(m.as_of, '-10 days')").fetchall()
+        "           FROM universe_pit WHERE ticker IN (SELECT DISTINCT ticker FROM split_events))"
+        " SELECT m.mcap, m.prev FROM m JOIN split_events s ON s.ticker = m.ticker AND s.date = m.as_of"
+        " WHERE m.prev_day >= date(m.as_of, '-10 days')").fetchall()
     pairs = [(a, b) for a, b in rows if a and b]
     if not pairs:
         return WARN, None, "no split days with a member on both sides"
@@ -68,6 +68,22 @@ def check_shares_pit_split_consistent(conn):
     """shares_pit rows divide the restated count by exactly the splits after from_date."""
     n = _one(conn, "SELECT COUNT(*) FROM shares_pit WHERE abs(shares * split_factor - restated_shares) > 1e-6 * restated_shares")[0]
     return (OK if n == 0 else ERROR), n, "shares_pit rows where shares x split_factor != restated_shares"
+
+
+def check_split_events_distinct(conn):
+    """No split is counted twice: same-ratio splits within days of each other must each be confirmed by prices."""
+    n = _one(conn, "SELECT COUNT(*) FROM split_events a JOIN split_events b ON b.ticker = a.ticker AND b.date > a.date"
+                   " AND b.date <= date(a.date, '+10 days') AND abs(b.ratio / a.ratio - 1) <= 0.01"
+                   " WHERE NOT (a.rule = 'price_confirmed' AND b.rule = 'price_confirmed')")[0]
+    return (OK if n == 0 else ERROR), n, "pairs of same-ratio split events within 10 days not each confirmed by prices (double counting)"
+
+
+def check_split_events_current(conn):
+    """split_events is rebuilt from the current corporate_actions: every raw split row maps to an event."""
+    n = _one(conn, "SELECT COUNT(*) FROM (SELECT DISTINCT ticker, date FROM corporate_actions c WHERE action = 'split'"
+                   " AND CAST(value AS REAL) > 0 AND NOT EXISTS (SELECT 1 FROM split_events e WHERE e.ticker = c.ticker"
+                   " AND e.date BETWEEN date(c.date, '-10 days') AND date(c.date, '+10 days')))")[0]
+    return (OK if n == 0 else ERROR), n, "raw split rows with no split event within 10 days (split_events is stale)"
 
 
 def check_ar_filed_after_period(conn, max_share=0.001):
@@ -107,8 +123,8 @@ def check_member_junk_quotes(conn, max_share=0.0005):
 
 
 CHECKS = [check_member_price_floor, check_member_profile_is_same_day, check_mcap_continuous_across_splits,
-          check_mcap_matches_vendor, check_shares_pit_split_consistent, check_ar_filed_after_period,
-          check_derived_knowledge_dates, check_universe_covers_prices, check_freshness, check_member_junk_quotes]
+          check_mcap_matches_vendor, check_split_events_distinct, check_split_events_current,
+          check_shares_pit_split_consistent, check_ar_filed_after_period, check_derived_knowledge_dates, check_universe_covers_prices, check_freshness, check_member_junk_quotes]
 
 
 def run(conn=None, checks=None, record=True, verbose=True) -> dict:

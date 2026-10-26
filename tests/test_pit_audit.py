@@ -28,7 +28,8 @@ def _status(c, name):
 def test_healthy_warehouse_passes_the_pit_checks(tmp_path):
     c = _healthy(tmp_path)
     for name in ["member_price_floor", "member_profile_is_same_day", "mcap_continuous_across_splits",
-                 "shares_pit_split_consistent", "universe_covers_prices"]:
+                 "shares_pit_split_consistent", "universe_covers_prices", "split_events_distinct",
+                 "split_events_current"]:
         assert _status(c, name) == "ok", name
 
 
@@ -52,6 +53,19 @@ def test_restated_share_mcap_breaks_split_continuity(tmp_path):
     c.commit()
     assert _status(c, "mcap_continuous_across_splits") == "error"
 
+
+def test_split_counted_twice_is_an_error(tmp_path):
+    c = _healthy(tmp_path)
+    c.execute("INSERT INTO split_events (ticker, date, ratio, raw_rows, rule) VALUES ('FWD', '2014-06-06', 7.0, 1, 'single')")
+    c.commit()
+    assert _status(c, "split_events_distinct") == "error"
+
+
+def test_split_events_not_rebuilt_after_new_splits_is_an_error(tmp_path):
+    c = _healthy(tmp_path)
+    _split(c, "FWD", "2024-06-10", 10.0)
+    c.commit()
+    assert _status(c, "split_events_current") == "error"
 
 def test_freshness_is_a_warning_not_an_error(tmp_path):
     c = _healthy(tmp_path)

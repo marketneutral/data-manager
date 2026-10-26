@@ -743,6 +743,117 @@ def build_ratios(conn=None) -> int:
     return total
 
 
+# ---- Split events ----
+# corporate_actions mirrors every split row the vendor has ever served, and its key
+# includes the value, so a refresh that re-serves an old split at more decimal
+# places (0.33333 -> 0.333333333) or moves it to the next trading day adds a row
+# beside the old one instead of replacing it. Every consumer multiplies split
+# ratios, so a doubled row squares the factor. split_events is the one-row-per-
+# split view the derived tables use:
+#   * rows on the same ticker and date are one split; the most precise value wins,
+#     or, when the values disagree by more than 1%, the one matching the price move;
+#   * rows with the same ratio (within 1%) within SPLIT_CLUSTER_DAYS are one split
+#     unless the as-traded close confirms each of them separately (vendor prices
+#     sometimes carry the split twice, and the shares must agree with the prices).
+# A row's price move is the last close before its first trading day over that
+# day's close; it confirms ratio s when it is within 25% of s.
+SPLIT_CLUSTER_DAYS = 10
+
+
+def _split_move(conn, ticker, date):
+    """(first trading day >= date, prev close / close) or (None, None) without quotes."""
+    row = conn.execute("SELECT date, close FROM prices WHERE ticker=? AND date >= ? AND date <= date(?, '+7 days')"
+                       " AND close > 0 ORDER BY date LIMIT 1", (ticker, date, date)).fetchone()
+    if not row:
+        return None, None
+    prev = conn.execute("SELECT close FROM prices WHERE ticker=? AND date < ? AND date >= date(?, '-10 days')"
+                        " AND close > 0 ORDER BY date DESC LIMIT 1", (ticker, row[0], row[0])).fetchone()
+    return row[0], (prev[0] / row[1] if prev else None)
+
+
+def _fit(move, ratio):
+    import math
+    return abs(math.log(move / ratio)) if move else math.inf
+
+
+def split_events(conn, ticker):
+    """[(date, ratio, raw_rows, rule)] for one ticker, oldest first; see the note above."""
+    import math
+    raw = conn.execute("SELECT date, value FROM corporate_actions WHERE ticker=? AND action='split'"
+                       " AND CAST(value AS REAL) > 0 ORDER BY date", (ticker,)).fetchall()
+    by_date = {}
+    for d, v in raw:
+        by_date.setdefault(d, []).append(v)
+    events = []                                   # [date, ratio, raw_rows, rule]
+    for d, vals in by_date.items():
+        rs = [float(v) for v in vals]
+        if len(vals) == 1:
+            events.append([d, rs[0], 1, "single"])
+        elif max(rs) / min(rs) <= 1.01:
+            events.append([d, float(max(vals, key=lambda v: len(v.strip()))), len(vals), "same_date"])
+        else:
+            _, move = _split_move(conn, ticker, d)
+            best = min(rs, key=lambda r: _fit(move, r)) if move else float(max(vals, key=lambda v: len(v.strip())))
+            events.append([d, best, len(vals), "same_date_conflict"])
+    out, i = [], 0
+    while i < len(events):                        # cluster same-ratio rows within SPLIT_CLUSTER_DAYS
+        j = i + 1
+        while (j < len(events) and abs(math.log(events[j][1] / events[i][1])) <= math.log(1.01)
+               and (dt.date.fromisoformat(events[j][0]) - dt.date.fromisoformat(events[j - 1][0])).days <= SPLIT_CLUSTER_DAYS):
+            j += 1
+        cluster = events[i:j]
+        if len(cluster) == 1:
+            out.append(tuple(cluster[0]))
+        else:
+            by_day = {}                           # rows landing on the same trading day are one split
+            for e in cluster:
+                day, move = _split_move(conn, ticker, e[0])
+                by_day.setdefault(day or e[0], []).append((e, move))
+            cands = [(max(es, key=lambda x: x[0][0])[0], es[0][1], sum(x[0][2] for x in es)) for es in by_day.values()]
+            confirmed = [c for c in cands if _fit(c[1], c[0][1]) <= math.log(1.25)]
+            n_raw = sum(e[2] for e in cluster)
+            if len(confirmed) > 1:                # the prices carry each one: keep them all
+                out += [(c[0][0], c[0][1], c[2], "price_confirmed") for c in confirmed]
+            else:
+                keep = confirmed[0] if confirmed else min(cands, key=lambda c: (_fit(c[1], c[0][1]), -len(c[0][0]), c[0][0]))
+                if not confirmed and all(c[1] is None for c in cands):
+                    keep = max(cands, key=lambda c: c[0][0])   # no quotes at all: the latest date
+                out.append((keep[0][0], keep[0][1], n_raw, "near_date"))
+        i = j
+    return sorted(out)
+
+
+def build_split_events(conn=None) -> int:
+    """Derive split_events (one row per split) from the raw corporate_actions split rows."""
+    conn = conn or db.connect()
+    tickers = [r[0] for r in conn.execute("SELECT DISTINCT ticker FROM corporate_actions WHERE action='split'")]
+    conn.execute("DELETE FROM split_events")
+    n = 0
+    for t in tickers:
+        rows = [(t, *e) for e in split_events(conn, t)]
+        conn.executemany("INSERT INTO split_events (ticker, date, ratio, raw_rows, rule) VALUES (?,?,?,?,?)", rows)
+        n += len(rows)
+    conn.executemany(
+        "INSERT OR REPLACE INTO descriptions "
+        "(table_name, indicator, isfilter, isprimarykey, title, description, unittype) "
+        "VALUES (?,?,?,?,?,?,?)", SPLIT_EVENTS_DESCRIPTIONS)
+    conn.commit()
+    return n
+
+
+SPLIT_EVENTS_DESCRIPTIONS = [
+    ("split_events", "ticker", "Y", "Y", "Ticker", "Sharadar ticker (current/last symbol).", "text"),
+    ("split_events", "date", "Y", "Y", "Ex-date", "Split ex-date (the date of the corporate_actions row kept).", "text"),
+    ("split_events", "ratio", "N", "N", "Split ratio", "s in an s:1 split (0.1 for a 1:10 reverse split).", "ratio"),
+    ("split_events", "raw_rows", "N", "N", "Raw rows",
+     "Number of corporate_actions split rows this split stands for (more than 1 when the vendor re-served it).", "units"),
+    ("split_events", "rule", "N", "N", "Merge rule",
+     "'single'; 'same_date' (duplicate values, the most precise kept); 'same_date_conflict' (values differ, the "
+     "price move picked one); 'near_date' (same ratio within days, one kept); 'price_confirmed' (same ratio within "
+     "days, each confirmed by the price move).", "text"),
+]
+
+
 # ---- PIT shares outstanding ----
 # SF1 share counts are restated by the vendor for every split after the filing,
 # like SF1 `price`: AAPL's 2014 filings carry ~24.5B shares, about 28x the count
@@ -778,9 +889,7 @@ def pit_share_events(conn, ticker):
             filings.append((d, wa, "shareswa"))
     if not filings:
         return []
-    splits = conn.execute(
-        "SELECT date, CAST(value AS REAL) FROM corporate_actions WHERE ticker=?"
-        " AND action='split' AND CAST(value AS REAL) > 0 ORDER BY date", (ticker,)).fetchall()
+    splits = conn.execute("SELECT date, ratio FROM split_events WHERE ticker=? ORDER BY date", (ticker,)).fetchall()
     split_dates = [d for d, _ in splits]
     after = [1.0] * (len(splits) + 1)          # after[i] = product of ratios of splits[i:]
     for i in range(len(splits) - 1, -1, -1):
@@ -809,8 +918,12 @@ def _shares_on(events, dates, day):
 
 
 def build_shares_pit(conn=None) -> int:
-    """Derive shares_pit (point-in-time shares outstanding) for every stock with SF1 shares."""
+    """Derive shares_pit (point-in-time shares outstanding) for every stock with SF1 shares.
+
+    Rebuilds split_events first, so the splits it divides by are the current ones.
+    """
     conn = conn or db.connect()
+    build_split_events(conn)
     tickers = [r[0] for r in conn.execute(
         "SELECT DISTINCT ticker FROM sf1 WHERE dimension IN ('ARQ','ARY')"
         " AND (sharesbas > 0 OR shareswa > 0)")]
@@ -867,6 +980,7 @@ def build_universe_pit(conn=None, as_of=None, min_price: float = 2.0,
     are replaced, including names that no longer qualify.
     """
     conn = conn or db.connect()
+    build_split_events(conn)                    # the splits the PIT shares divide by
     as_of = as_of or dt.date.today().isoformat()
     types = types or _PIT_DEFAULT_TYPES
     conn.execute("DELETE FROM universe_pit WHERE as_of=?", (as_of,))
@@ -936,6 +1050,7 @@ def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
     """
     import bisect
     conn = conn or db.connect()
+    build_split_events(conn)                    # the splits the PIT shares divide by
     types = types or _PIT_DEFAULT_TYPES
     trading = [r[0] for r in conn.execute("SELECT DISTINCT date FROM prices ORDER BY date")]
     if start:

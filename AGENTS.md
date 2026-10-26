@@ -63,7 +63,8 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | ratios | derived (sf1 MRY latest) | ticker | valuation/quality snapshot (forward_pe & beta always NULL — SF1 lacks them) |
 | classifications | derived (GICS map) | ticker | 11 GICS labels — covers only 2,589 iShares-era names (known gap) |
 | universe | derived (iShares IWV) | ticker | legacy R3000 snapshot (superseded by universe_pit) |
-| shares_pit | derived (sf1 ARQ/ARY + split actions) | (ticker,from_date) | point-in-time shares outstanding in as-traded units: SF1 `sharesbas × sharefactor` (else `shareswa`) ÷ splits after the date; a row holds until the next `from_date` |
+| split_events | derived (corporate_actions splits) | (ticker,date) | one row per split: the raw table can hold a split twice after a refresh re-serves it (more decimals, or moved a day); `rule` says how rows were merged |
+| shares_pit | derived (sf1 ARQ/ARY + split_events) | (ticker,from_date) | point-in-time shares outstanding in as-traded units: SF1 `sharesbas × sharefactor` (else `shareswa`) ÷ splits after the date; a row holds until the next `from_date` |
 | universe_pit | derived (master+prices+shares_pit) | (as_of,ticker) | investable membership per trading day |
 | snapshots | ledger | id | per-pull record (source, pulled_at, as_of, row_count) |
 | descriptions | raw (bulk) | (table_name, indicator) | Sharadar's field dictionary: title + sentence-level definition + unit type for every column of every vendor table (373 rows, 17 datasets) |
@@ -107,8 +108,10 @@ WHERE table_name = 'SF1' AND indicator = 'revenue';
   Sharadar taxonomy (~99.4% stock coverage) — NOT GICS (that's
   `classifications`, 2,589 names only). `firstpricedate/lastpricedate`
   bound `prices`; `lastpricedate` = delisting date for dead names.
-* `corporate_actions` (670,752): one row per event, key (ticker,date,
-  action). `value` units are action-specific and verified for: split
+* `corporate_actions` (740,770 after the 2026-10-26 refresh): one row per vendor row, key (ticker,date,
+  action,value). A refresh that re-serves a split at more decimals (0.33333 →
+  0.333333333) or a day later adds a row beside the old one, so **never multiply raw
+  split rows; use `split_events`** (one row per split). `value` units are action-specific and verified for: split
   (ratio s in s:1 — feeds the adjustment chain), dividend ($/share,
   date = ex-date), spinoff (new shares per original share). Paired events
   use `contraticker/contraname` (tickerchange, acquisition, relation,
@@ -357,6 +360,7 @@ fact from its knowledge date onward.
 | `sf1` AR values | | the **original** filing's (99.9%; 99.3% of later-restated periods keep the original, 0.0% the restatement) | as-of use with `date <= D` | — |
 | `sf1` MRQ/MRY/MRT | indexed to the report period | **restated after the fact** | research on final numbers only | any backtest → use AR* (the accessor refuses MR* unless `allow_restated=True`) |
 | `sf1` `roa`, `roe`, `ros`, `roic`, averages | | empty in ARQ | use the ART/ARY row of the same filing | — |
+| `split_events` ✓ | `date` = ex-date | | **every split ratio product** (split factors, share basis) | multiplying raw `corporate_actions` split rows → a re-served split is counted twice (1,572 after the 2026-10-26 refresh) |
 | `shares_pit` ✓ | `from_date` (filing date or split ex-date) | that day's units | `close × shares` = PIT market cap | — |
 | `universe_pit` ✓ | `as_of` | profile is that day's quote | membership and profile on `as_of` | `sector`/`industry` are the **latest** classification on every day (no history exists) |
 | `fundamentals`, `quarterly_statements` ✓ | `filing_date` (added 2026-10-25) | as filed (`shares_out` mirrors restated `shareswa`) | as-of on `filing_date` | a fixed lag after period end (2.1% of annual filings come out >180 days after Dec 31) → use `filing_date` |
@@ -416,7 +420,7 @@ on Sundays; Dec 31 + 180 days is a weekend in some years).
      moved forward together.
    * Spot check a well-known name (AAPL last close sane; 2026 profile
      ≈ live price, 1998-01-14 ≈ $19.75 — the fixed-profile fingerprint).
-   * `uv run pytest -q` (121 tests, incl. the PIT profile, PIT-shares and pit-audit regressions).
+   * `uv run pytest -q` (127 tests, incl. the PIT profile, PIT-shares, split-events and pit-audit regressions).
    * `uv run data-manager pit-audit` must report no `error` (bulk-update runs it and fails on
      one); results accumulate in `pit_audit_runs`. See "Point-in-time contract".
 5. Cadence: the bulk zips are daily; a morning `bulk-update` + `optimize-db`

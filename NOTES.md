@@ -1,5 +1,19 @@
 # Data Manager Notes (Sharadar era)
 
+## Refresh re-served splits: split_events (2026-10-26)
+
+- **Found by pit-audit** on the first refresh since 2026-08 (bulk-update, 10.7 h): split-day mcap
+  continuity fell to 0.9469 (< 0.95). The new ACTIONS file re-serves old splits at more decimals
+  (GPT4 0.33333 → 0.333333333) and moves some weekend-dated ones to the next trading day;
+  `corporate_actions` is keyed on the value, so the upsert added 1,582 same-date duplicates beside
+  the old rows. Every split product squared those ratios (a 1:3 reverse split became 1:9 in
+  `shares_pit` and `universe_pit.mcap`). Pre-existing: 70 same-ratio pairs a few days apart (MNST
+  2026-08-10 and 08-11; the close halves on 08-11).
+- **Fix:** raw rows untouched; new derived `split_events` (one row per split; the price move picks
+  among conflicting values and near-date copies, and keeps two same-ratio splits only when the close
+  confirms each). `shares_pit`, the universe builders and `pit.split_factor_after` read it.
+  pit-audit gains `split_events_distinct` and `split_events_current` (12 checks).
+
 ## Point-in-time audit, pit-audit, accessors (2026-10-25)
 
 - **Audit (EDGAR + vendor cross-checks):** SF1 AR `date` = EDGAR's original 10-Q/10-K filing date on

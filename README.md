@@ -145,10 +145,18 @@ raw fraction (0.0042 = 0.42%).
 net_income, revenue, gross_profit, operating_cash_flow, total_assets,
 total_liabilities, current_assets, current_liabilities, shares_out, roa, cfo.
 
+### `split_events` — one row per split (PK: ticker, date)
+ratio (s in s:1), raw_rows (corporate_actions rows merged), rule. Derived from the
+raw split rows, which can hold one split twice after a refresh re-serves it: rows on
+one date are one split (the most precise value; the price move decides a real
+conflict), and same-ratio rows within 10 days are one split unless the as-traded
+close confirms each. Rebuilt by `build-shares-pit` and the universe builders. Use it,
+not `corporate_actions`, for any product of split ratios.
+
 ### `shares_pit` — point-in-time shares outstanding (PK: ticker, from_date)
 shares (as-traded units as of `from_date`), filing_date, restated_shares (SF1
 `sharesbas × sharefactor` as served, or `shareswa` where `sharesbas` is missing;
-`share_field` says which), split_factor (product of split ratios after
+`share_field` says which), split_factor (product of `split_events` ratios after
 `from_date`; `shares = restated_shares / split_factor`). A row holds until the next
 `from_date` (a filing date or a split ex-date). PIT market cap on day D =
 `prices.close(D) × shares` of the latest row with `from_date ≤ D`. SF1 share
@@ -174,7 +182,7 @@ data-manager update-quarterly --all [--force] [--ticker A,B]
 data-manager update-ratios --all [--force] [--ticker A,B]
 data-manager update-sp500                              S&P500 membership
 data-manager update-french-factors [--force]          Ken French daily factor returns (3F/5F/Mom/ST/LT)
-data-manager build-shares-pit                          derive shares_pit (sf1 shares / later splits)
+data-manager build-shares-pit                          derive split_events and shares_pit (sf1 shares / later splits)
 data-manager pit-audit [--no-record]                   point-in-time invariants on the live warehouse; exit 1 on error
 data-manager build-universe-pit --history              rebuild universe_pit for every trading day
 data-manager enrich-cik | enrich-figi | enrich-sic     legacy SEC/OpenFigi enrichment

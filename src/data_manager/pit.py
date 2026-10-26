@@ -27,9 +27,9 @@ def _placeholders(xs):
 
 
 def split_factor_after(date: str, tickers=None, conn=None) -> dict:
-    """{ticker: product of the split ratios with ex-date after `date`} (1.0 when none)."""
+    """{ticker: product of the split ratios with ex-date after `date`} (1.0 when none), from split_events."""
     conn = conn or db.connect()
-    sql = "SELECT ticker, CAST(value AS REAL) FROM corporate_actions WHERE action='split' AND date > ? AND CAST(value AS REAL) > 0"
+    sql = "SELECT ticker, ratio FROM split_events WHERE date > ?"
     params = [date]
     if tickers:
         sql += f" AND ticker IN ({_placeholders(tickers)})"

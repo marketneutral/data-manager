@@ -377,6 +377,17 @@ CREATE TABLE IF NOT EXISTS pit_audit_runs (
     PRIMARY KEY (run_at, check_name)
 );
 
+-- One row per split (derived from the corporate_actions split rows, which can hold
+-- the same split twice after a refresh re-serves it; see universe.split_events).
+CREATE TABLE IF NOT EXISTS split_events (
+    ticker   TEXT,
+    date     TEXT,      -- ex-date
+    ratio    REAL,      -- s in an s:1 split
+    raw_rows INTEGER,   -- corporate_actions rows merged into this split
+    rule     TEXT,      -- single | same_date | same_date_conflict | near_date | price_confirmed
+    PRIMARY KEY (ticker, date)
+);
+
 CREATE TABLE IF NOT EXISTS shares_pit (
     ticker          TEXT,
     from_date       TEXT,   -- first day this count applies (a filing date or a split ex-date)
