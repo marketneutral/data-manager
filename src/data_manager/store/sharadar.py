@@ -30,6 +30,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .keys import DAY, Keys, day_number
+
 SOURCE = "sharadar"
 PRICE_TABLES = {"SEP": "stock", "SFP": "fund"}
 BULK_FILES = {"tickers": "tickers.csv.zip", "stocks": "stocks.csv.zip", "funds": "funds.csv.zip",
@@ -142,7 +144,8 @@ def detect_splits(px, actions=None):
     within 10 days that fits it (how='action'), else the simplest fraction that fits (how='factor')."""
     px = px[(px.close > 0) & (px.closeunadj > 0)]
     f, tol = _factor(px)
-    same = px.security_id.eq(px.security_id.shift())
+    sid = px["_code"] if "_code" in px else px.security_id
+    same = sid.eq(sid.shift())
     step = np.log(f.shift() / f)
     noise = tol + tol.shift()
     hit = same & (step.abs() > np.maximum(4 * noise, SPLIT_MIN))
@@ -169,37 +172,35 @@ def detect_splits(px, actions=None):
 
 def later_factor(rows, splits, date_col="date"):
     """F for each row: the product of the security's split ratios with ex-date after the row's date."""
-    rows = rows.reset_index(drop=True)
     F = np.ones(len(rows))
-    if splits is None or splits.empty:
+    if splits is None or splits.empty or not len(rows):
         return F
-    sp = splits.sort_values(["security_id", "ex_date"])
-    by = {sid: (g.ex_date.to_numpy(), g.ratio.to_numpy(dtype=float)) for sid, g in sp.groupby("security_id")}
-    for sid, idx in rows.groupby("security_id").indices.items():
-        if sid not in by:
-            continue
-        dates, ratios = by[sid]
-        after = np.append(np.cumprod(ratios[::-1])[::-1], 1.0)         # after[i]: product of ratios[i:]
-        k = np.searchsorted(dates, rows[date_col].to_numpy()[idx], side="right")
-        F[idx] = after[k]
+    K = Keys(rows.security_id, splits.security_id)
+    sk = K.key(splits.security_id, splits.ex_date)
+    order = np.argsort(sk, kind="stable")
+    sk, code = sk[order], sk[order] // DAY
+    logr = np.log(splits.ratio.to_numpy(dtype=float)[order])
+    # suffix[i]: the sum of log ratios of splits i.. of the same security
+    rev = pd.Series(logr[::-1]).groupby(code[::-1]).cumsum().to_numpy()[::-1]
+    rk = K.key(rows.security_id, rows[date_col])
+    i = np.searchsorted(sk, rk, side="right")          # the first split after the row (in key order)
+    inside = i < len(sk)
+    hit = inside.copy()
+    hit[inside] = code[i[inside]] == rk[inside] // DAY
+    F[hit] = np.exp(rev[i[hit]])
     return F
 
 
 # --- prices, events, shares ----------------------------------------------------------------------------------------
 
-SEP_CHAR = "\x01"                      # sorts before every character a security id or date can hold
-
-
-def _keys(security_id, date):
-    return (pd.Series(security_id).astype(str).to_numpy() + SEP_CHAR + pd.Series(date).astype(str).to_numpy()).astype(object)
-
-
-def _locate(pkey, px_sid, sid, date):
+def _locate(pkey, K, sid, date):
     """Positions of the first price row on or after each (sid, date), and whether that row is the same security."""
-    pos = np.searchsorted(pkey, _keys(sid, date))
+    ek = K.key(sid, date)
+    pos = np.searchsorted(pkey, ek)
     inside = pos < len(pkey)
     hit = inside.copy()
-    hit[inside] = px_sid.to_numpy()[pos[inside]] == pd.Series(sid).to_numpy()[inside]
+    hit[inside] = (pkey[pos[inside]] // DAY) == (ek[inside] // DAY)
+    hit &= (ek // DAY) >= 0
     return np.where(inside, pos, 0), hit
 
 
@@ -240,9 +241,12 @@ def normalize(vendor, known_splits=None):
     if not px_parts:
         return dict(out, problems=problems)
     px = pd.concat(px_parts, ignore_index=True)
-    px = px[px.closeunadj > 0].copy()
-    px["_k"] = _keys(px.security_id, px.date)
-    px = px.sort_values("_k").drop(columns="_k").reset_index(drop=True)
+    px = px[px.closeunadj > 0].reset_index(drop=True)
+    K = Keys(px.security_id, *([actions.security_id] if actions is not None else []))
+    pkey = K.key(px.security_id, px.date)
+    order = np.argsort(pkey, kind="stable")
+    px, pkey = px.iloc[order].reset_index(drop=True), pkey[order]
+    px["_code"] = pkey // DAY
 
     found = detect_splits(px, actions)
     if known_splits is not None and len(known_splits):
@@ -274,7 +278,7 @@ def normalize(vendor, known_splits=None):
     out["prices"] = prices
 
     # the vendor's total-return step, to find dividends and other adjustments and to check ours
-    same = px.security_id.eq(px.security_id.shift()).to_numpy()
+    same = px._code.eq(px._code.shift()).to_numpy()
     q = (px.closeadj.shift() * px.close / (px.closeadj * px.close.shift())).to_numpy()
     q_noise = (HALF_TICK / px.closeadj + HALF_TICK / px.closeadj.shift() + HALF_TICK / px.close
                + HALF_TICK / px.close.shift()).to_numpy()
@@ -291,10 +295,9 @@ def normalize(vendor, known_splits=None):
     divs = out.get("dividends", pd.DataFrame(columns=["security_id", "ex_date", "amount_traded"]))
 
     # each dividend lands on the security's first price row on or after its ex-date
-    pkey = _keys(px.security_id, px.date)
     div_on_row = np.zeros(len(px))
     if len(divs):
-        pos, hit = _locate(pkey, px.security_id, divs.security_id, divs.ex_date)
+        pos, hit = _locate(pkey, K, divs.security_id, divs.ex_date)
         np.add.at(div_on_row, pos[hit], divs.amount_traded.to_numpy()[hit])
     with np.errstate(divide="ignore", invalid="ignore"):
         q_ours = 1 - div_on_row / cprev
@@ -305,8 +308,8 @@ def normalize(vendor, known_splits=None):
         if len(o):
             d0 = (pd.to_datetime(o.date) - pd.Timedelta(days=3)).dt.strftime("%Y-%m-%d")
             d1 = (pd.to_datetime(o.date) + pd.Timedelta(days=4)).dt.strftime("%Y-%m-%d")
-            a = np.searchsorted(pkey, _keys(o.security_id, d0))
-            b = np.searchsorted(pkey, _keys(o.security_id, d1))
+            a = np.searchsorted(pkey, K.key(o.security_id, d0))
+            b = np.searchsorted(pkey, K.key(o.security_id, d1))
             for i, j in zip(a, b):
                 near_other[i:j] = True
     big = same & np.isfinite(gap) & (np.abs(gap) > 4 * q_noise) & (

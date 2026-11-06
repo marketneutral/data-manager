@@ -13,9 +13,8 @@ import json
 import numpy as np
 import pandas as pd
 
+from .keys import DAY, Keys
 from .schema import TABLES, connect
-
-SEP = "\x01"
 
 
 def rows(conn, table, at=None, where="", params=(), columns=None):
@@ -41,25 +40,24 @@ def last_accepted(conn):
     return r[0]
 
 
-def _keys(sid, date):
-    return (pd.Series(sid).astype(str).to_numpy() + SEP + pd.Series(date).astype(str).to_numpy()).astype(object)
-
-
 def event_factors(prices, splits, dividends, other):
     """log E(t) for each price row (prices sorted by security and date), from the events."""
     px = prices.reset_index(drop=True)
-    pkey = _keys(px.security_id, px.date)
+    evs = [e for e in (splits, dividends, other) if e is not None and len(e)]
+    K = Keys(px.security_id, *[e.security_id for e in evs])
+    pkey = K.key(px.security_id, px.date)
     if len(pkey) > 1 and not (pkey[:-1] <= pkey[1:]).all():
         raise ValueError("prices must be sorted by security_id, date")
-    same = px.security_id.eq(px.security_id.shift()).to_numpy()
+    code = pkey // DAY
+    same = np.concatenate([[False], code[1:] == code[:-1]])
     cprev = px.close_traded.shift().to_numpy()
     logE = np.zeros(len(px))
-    sid = px.security_id.to_numpy()
 
     def place(ev, date_col="ex_date"):
-        pos = np.searchsorted(pkey, _keys(ev.security_id, ev[date_col]))
+        ek = K.key(ev.security_id, ev[date_col])
+        pos = np.searchsorted(pkey, ek)
         ok = pos < len(pkey)
-        ok[ok] = sid[pos[ok]] == ev.security_id.to_numpy()[ok]
+        ok[ok] = code[pos[ok]] == ek[ok] // DAY
         ok &= same[np.minimum(pos, len(pkey) - 1)]          # an event before a security's first row changes nothing
         return pos, ok
 
@@ -82,12 +80,16 @@ def event_factors(prices, splits, dividends, other):
 def adjusted(prices, splits, dividends, other, as_of=None, fields=("open", "high", "low", "close")):
     """Total-return adjusted prices as of `as_of` (a date; None: each security's last row), one column per field.
     Rows after as_of are dropped. Volume adjusted the same way divides by the factor."""
-    px = prices.sort_values(["security_id", "date"]).reset_index(drop=True)
     if as_of is not None:
-        px = px[px.date <= as_of].reset_index(drop=True)
+        prices = prices[prices.date <= as_of]
+    K = Keys(prices.security_id)
+    pk = K.key(prices.security_id, prices.date)
+    order = np.argsort(pk, kind="stable")
+    px = prices.iloc[order].reset_index(drop=True)
+    code = pk[order] // DAY
     logE = event_factors(px, splits, dividends, other)
-    S = pd.Series(logE).groupby(px.security_id.to_numpy()).cumsum().to_numpy()
-    last = pd.Series(S).groupby(px.security_id.to_numpy()).transform("last").to_numpy()
+    S = pd.Series(logE).groupby(code).cumsum().to_numpy()
+    last = pd.Series(S).groupby(code).transform("last").to_numpy()
     factor = np.exp(last - S)
     out = px[["security_id", "date"]].copy()
     for f in fields:

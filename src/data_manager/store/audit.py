@@ -10,13 +10,8 @@
 import numpy as np
 import pandas as pd
 
+from .keys import DAY, Keys
 from .read import event_factors
-
-SEP = "\x01"
-
-
-def _keys(sid, date):
-    return (pd.Series(sid).astype(str).to_numpy() + SEP + pd.Series(date).astype(str).to_numpy()).astype(object)
 
 
 def run(facts, checks):
@@ -24,7 +19,9 @@ def run(facts, checks):
     px = facts.get("prices")
     if px is None or not len(px):
         return out
-    px = px.sort_values(["security_id", "date"]).reset_index(drop=True)
+    K = Keys(px.security_id)
+    order = np.argsort(K.key(px.security_id, px.date), kind="stable")
+    px = px.iloc[order].reset_index(drop=True)
     if "_F" in px:
         pre = px[(np.abs(px._F - 1) > 1e-9) & (px.volume_traded > 0)]
         v = pre.volume_traded.to_numpy()
@@ -32,7 +29,7 @@ def run(facts, checks):
                                           share=round(float((np.abs(v - np.round(v)) < 1e-4 * np.maximum(1, v)).mean()), 4) if len(v) else None)
     vc = checks.get("_vendor_check")
     if vc is not None and len(vc):
-        vc = vc.sort_values(["security_id", "date"]).reset_index(drop=True)
+        vc = vc.iloc[np.argsort(K.key(vc.security_id, vc.date), kind="stable")].reset_index(drop=True)
         logq = event_factors(px, None, facts.get("dividends"), facts.get("other_adjustments"))
         vq = np.log(vc.q.to_numpy(dtype=float))
         ok = vc.same.to_numpy(dtype=bool) & np.isfinite(vq)
@@ -51,8 +48,9 @@ def run(facts, checks):
         m = sh.merge(mc, on=["security_id", "filing_date", "dimension"], how="inner").drop_duplicates(
             ["security_id", "filing_date", "dimension", "report_period"])
         m = m[m.dimension == "ARQ"]
-        pkey = _keys(px.security_id, px.date)
-        pos = np.searchsorted(pkey, _keys(m.security_id, m.filing_date), side="right") - 1
+        K2 = Keys(px.security_id, m.security_id)
+        pkey = K2.key(px.security_id, px.date)
+        pos = np.searchsorted(pkey, K2.key(m.security_id, m.filing_date), side="right") - 1
         good = (pos >= 0) & (px.security_id.to_numpy()[np.maximum(pos, 0)] == m.security_id.to_numpy())
         close = np.where(good, px.close_traded.to_numpy()[np.maximum(pos, 0)], np.nan)
         ours = m.shares_filed.to_numpy() * close
