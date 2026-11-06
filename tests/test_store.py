@@ -262,3 +262,24 @@ def test_revised_volume_history_is_a_notice_and_revised_prices_are_held(tmp_path
     v = R.rows(conn, "prices").set_index(["security_id", "date"]).loc[("102", DAYS[0]), "volume_traded"]
     assert v == pytest.approx(comps[1]["vol"][0])                          # the revision is current
     assert len(conn.execute("select * from prices where superseded_in is not null").fetchall()) == 20   # the old kept
+
+
+def test_the_nightly_load_fetches_since_the_last_load_and_reports_a_new_day(tmp_path, comps, monkeypatch):
+    s = store(tmp_path)
+    L.load(vendor(tmp_path, comps, 58, "a"), store=s, hash_files=False)
+    asked = []
+
+    def fake_fetch(since, dest, today=None, upto=59):
+        asked.append(since)
+        full = vendor(tmp_path, comps, upto, f"n{len(asked)}")
+        st = pd.read_csv(full["stocks"]); st[st.date >= DAYS[58]].to_csv(tmp_path / f"inc{len(asked)}.csv", index=False)
+        return dict(full, stocks=str(tmp_path / f"inc{len(asked)}.csv"))
+
+    monkeypatch.setattr(A, "fetch_increment", fake_fetch)
+    r = L.nightly(store=s, dest_root=tmp_path / "inc")
+    assert r["status"] == "accepted" and r["new_day"] and r["summary"]["data_through"] == DAYS[59]
+    assert r["summary"]["counts"]["prices"] == {"added": 3, "changed": 0, "missing": 0}
+    assert len(asked) == 1 and len(asked[0]) == 10                           # a date, a day before the last load
+    monkeypatch.setattr(A, "fetch_increment", lambda since, dest, today=None: fake_fetch(since, dest, today, upto=59))
+    again = L.nightly(store=s, dest_root=tmp_path / "inc")                   # the vendor has nothing new yet
+    assert again["status"] == "accepted" and not again["new_day"]

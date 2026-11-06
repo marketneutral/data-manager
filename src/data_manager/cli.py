@@ -152,6 +152,9 @@ def main(argv=None):
     p_sl.add_argument("--increment", action="store_true", help="the files carry only what changed (a nightly load)")
     p_sl.add_argument("--store", default=None)
     p_sl.add_argument("--note", default=None)
+    p_sn = sub.add_parser("store-nightly", help="Fetch what the vendor changed since the last load and load it (exit 0: a new day; 2: held back; 3: no new day yet).")
+    p_sn.add_argument("--store", default=None)
+    p_sn.add_argument("--dest", default=None, help="where the night's vendor files are kept (default: increments/ beside the store)")
     p_ss = sub.add_parser("store-status", help="The store's loads and current row counts.")
     p_ss.add_argument("--store", default=None)
     p_sa = sub.add_parser("store-accept", help="Commit a quarantined load after review.")
@@ -363,6 +366,14 @@ def _store_command(args):
         print(json.dumps(dict(load_id=r["load_id"], status=r["status"], counts=r["summary"]["counts"],
                               findings=r["summary"]["findings"], audit=r["summary"].get("audit")), indent=1, default=str))
         return 0 if r["status"] == "accepted" else 2
+    if args.command == "store-nightly":
+        r = SL.nightly(store=args.store, dest_root=args.dest)
+        print(json.dumps(dict(load_id=r["load_id"], status=r["status"], new_day=r["new_day"],
+                              through=r["summary"].get("data_through"), previous=r["previous_through"],
+                              counts=r["summary"]["counts"], findings=r["summary"]["findings"], folder=r["folder"]), indent=1, default=str))
+        if r["status"] != "accepted":
+            return 2
+        return 0 if r["new_day"] else 3
     if args.command == "store-status":
         conn = store_connect(args.store, readonly=True)
         for r in SR.loads(conn).itertuples():
