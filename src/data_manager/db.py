@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS quarterly_statements (
     net_income REAL, revenue REAL, gross_profit REAL, operating_cash_flow REAL,
     total_assets REAL, total_liabilities REAL, current_assets REAL, current_liabilities REAL,
     shares_out REAL, roa REAL, cfo REAL,
+    filing_date TEXT,   -- SEC filing date of the ARQ row: the first day the figures were known
     PRIMARY KEY (ticker, period)
 );
 
@@ -361,6 +362,43 @@ CREATE TABLE IF NOT EXISTS universe_pit (
 );
 CREATE INDEX IF NOT EXISTS idx_pit_asof ON universe_pit(as_of);
 
+-- Point-in-time shares outstanding, in each day's as-traded units (derived).
+-- SF1 share counts are restated by the vendor for every split after the filing,
+-- so they cannot be multiplied by an as-traded close. shares = restated_shares /
+-- split_factor, where split_factor is the product of the split ratios with
+-- ex-date after from_date. A row holds from from_date until the next row's.
+-- Ledger of point-in-time audit runs (data-manager pit-audit); rows are only ever appended.
+CREATE TABLE IF NOT EXISTS pit_audit_runs (
+    run_at     TEXT,   -- UTC timestamp of the run
+    check_name TEXT,
+    status     TEXT,   -- ok | warn | error
+    value      TEXT,   -- JSON: the measured value
+    detail     TEXT,
+    PRIMARY KEY (run_at, check_name)
+);
+
+-- One row per split (derived from the corporate_actions split rows, which can hold
+-- the same split twice after a refresh re-serves it; see universe.split_events).
+CREATE TABLE IF NOT EXISTS split_events (
+    ticker   TEXT,
+    date     TEXT,      -- ex-date
+    ratio    REAL,      -- s in an s:1 split
+    raw_rows INTEGER,   -- corporate_actions rows merged into this split
+    rule     TEXT,      -- single | same_date | same_date_conflict | near_date | price_confirmed
+    PRIMARY KEY (ticker, date)
+);
+
+CREATE TABLE IF NOT EXISTS shares_pit (
+    ticker          TEXT,
+    from_date       TEXT,   -- first day this count applies (a filing date or a split ex-date)
+    shares          REAL,   -- shares outstanding as of from_date, as-traded units
+    filing_date     TEXT,   -- SF1 ARQ/ARY row (date = filing date) the count comes from
+    restated_shares REAL,   -- that row's sharesbas x sharefactor (else shareswa), as served
+    split_factor    REAL,   -- product of split ratios with ex-date > from_date
+    share_field     TEXT,   -- 'sharesbas' or 'shareswa' (fallback)
+    PRIMARY KEY (ticker, from_date)
+);
+
 CREATE TABLE IF NOT EXISTS fundamentals (
     ticker          TEXT,
     fiscal_year     INTEGER,
@@ -374,6 +412,7 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     d_gross_margin  REAL,
     d_asset_turnover REAL,
     f_score         INTEGER,
+    filing_date     TEXT,   -- SEC filing date of the fiscal year's ARY row: the first day it was known
     PRIMARY KEY (ticker, fiscal_year)
 );
 
@@ -470,6 +509,15 @@ def connect(db_path: str | Path | None = None) -> sqlite3.Connection:
         conn.execute("ALTER TABLE universe ADD COLUMN lei TEXT")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE shares_pit ADD COLUMN share_field TEXT")
+    except sqlite3.OperationalError:
+        pass
+    for table in ("fundamentals", "quarterly_statements"):
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN filing_date TEXT")
+        except sqlite3.OperationalError:
+            pass
 
     conn.commit()
     return conn

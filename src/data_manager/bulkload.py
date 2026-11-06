@@ -4,7 +4,8 @@ returns a redirect to a pre-prepared, time-limited .csv.zip (sharadar.com/docs/b
 discovered 2026-08-11). Verified semantics:
   - tickers zip uses table codes SEP=stocks, SFP=funds
   - prices (stocks/funds): OHLC split-adjusted, closeunadj as-traded, bulk
-    volume is AS-TRADED (contrary to the FAQ text); depth 1998-> on this key
+    volume is split-adjusted like OHLC (corrected 2026-11-06; the FAQ is right), stored here as served
+    and truncated by int(): as traded = volume / (closeunadj/close). depth 1998-> on this key
     (stocks full = 46.3M rows, complete extent even for years=full)
   - fundamentals zip: report date is `datekey`; SIX dimensions incl. TTM:
     ARY/MRY/ARQ/MRQ + ART/MRT
@@ -111,7 +112,7 @@ def parse_price_row(r):
     return (r.get("ticker"), r.get("date"),
             o*factor if o is not None else None, h*factor if h is not None else None,
             l*factor if l is not None else None, c_unadj,
-            int(vol) if vol is not None else None, adjustment)  # bulk volume is AS-TRADED
+            int(vol) if vol is not None else None, adjustment)  # split-adjusted, NOT as traded (see the docstring)
 
 def load_prices(path, conn, commit_every=200000):
     n = 0; rows = []

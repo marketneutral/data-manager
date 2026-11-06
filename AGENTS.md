@@ -63,9 +63,42 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | ratios | derived (sf1 MRY latest) | ticker | valuation/quality snapshot (forward_pe & beta always NULL — SF1 lacks them) |
 | classifications | derived (GICS map) | ticker | 11 GICS labels — covers only 2,589 iShares-era names (known gap) |
 | universe | derived (iShares IWV) | ticker | legacy R3000 snapshot (superseded by universe_pit) |
-| universe_pit | derived (master+prices+sf1) | (as_of,ticker) | investable membership per trading day |
+| split_events | derived (corporate_actions splits) | (ticker,date) | one row per split: the raw table can hold a split twice after a refresh re-serves it (more decimals, or moved a day); `rule` says how rows were merged |
+| shares_pit | derived (sf1 ARQ/ARY + split_events) | (ticker,from_date) | point-in-time shares outstanding in as-traded units: SF1 `sharesbas × sharefactor` (else `shareswa`) ÷ splits after the date; a row holds until the next `from_date` |
+| universe_pit | derived (master+prices+shares_pit) | (as_of,ticker) | investable membership per trading day |
 | snapshots | ledger | id | per-pull record (source, pulled_at, as_of, row_count) |
 | descriptions | raw (bulk) | (table_name, indicator) | Sharadar's field dictionary: title + sentence-level definition + unit type for every column of every vendor table (373 rows, 17 datasets) |
+
+## The store (`warehouse.db`): the warehouse for a nightly load
+
+A second database, `~/.prime/agent/warehouse.db` (`DATA_MANAGER_STORE`), built by `data_manager.store`. It is the
+foundation for research data: `data-manager export-panel` builds panels from it. `data_manager.db` is untouched by it.
+
+**Each fact once, in units later events don't change.** `prices` (open/high/low/close and volume *as traded*,
+volume exact), `splits` (the splits the vendor applied, found from its own split factor; exact ratios from ACTIONS),
+`dividends` (amount per share in that day's units), `other_adjustments` (spinoffs and other total-return steps,
+with the vendor's factor), `shares` (as filed: count in the filing date's units, by filing date), `securities`
+(ticker, labels and dates per version). A later split adds a `splits` row and changes no `prices` row.
+
+**Keys and history.** Securities are keyed by `security_id` (Sharadar's permaticker), never by ticker. Nothing is
+deleted: every row has `added_in` and `superseded_in` (NULL while current) load ids. Current rows:
+`WHERE superseded_in IS NULL`; as of load L: `added_in <= L AND (superseded_in IS NULL OR superseded_in > L)`
+(`store.read.rows(conn, table, at=L)`). `loads` records each load's files (sha256), counts, findings and status.
+
+**Loads.** `data-manager store-load` (full, from the bulk zips) or `--increment --file stocks=...` (only what
+changed). Convert (`store/sharadar.py`, the only module naming Sharadar columns) → compare within the vendor's 3-decimal
+rounding (a mechanical rewrite changes nothing) → gate → commit → audit. The gate holds back (status
+`quarantined`, staged on disk, nothing changed) a load that drops price history, changes many old prices, or whose
+split factors disagree widely; `store-accept ID --by NAME` commits it after review, `store-reject` discards it.
+
+**Adjusted prices are computed when read** (`store.read.adjusted(prices, splits, dividends, other, as_of=D)`): as
+traded × the events after each day up to D. Total returns; nothing after D is used. The vendor's own `closeadj` is
+rounded to 3 decimals, which puts up to ±1% of noise in daily returns where the adjusted level is small (NVDA
+2002–2004); this one is computed from the as-traded close and exact events.
+
+**Audit (every load).** Volume whole shares on pre-split rows; our total-return step against the vendor's within
+rounding; splits with an ACTIONS ratio; price × shares against the vendor's marketcap on filing dates; no price row
+outside the vendor's first/last price dates.
 
 ## The data dictionary is IN the database — read `descriptions`
 
@@ -106,8 +139,10 @@ WHERE table_name = 'SF1' AND indicator = 'revenue';
   Sharadar taxonomy (~99.4% stock coverage) — NOT GICS (that's
   `classifications`, 2,589 names only). `firstpricedate/lastpricedate`
   bound `prices`; `lastpricedate` = delisting date for dead names.
-* `corporate_actions` (670,752): one row per event, key (ticker,date,
-  action). `value` units are action-specific and verified for: split
+* `corporate_actions` (740,770 after the 2026-10-26 refresh): one row per vendor row, key (ticker,date,
+  action,value). A refresh that re-serves a split at more decimals (0.33333 →
+  0.333333333) or a day later adds a row beside the old one, so **never multiply raw
+  split rows; use `split_events`** (one row per split). `value` units are action-specific and verified for: split
   (ratio s in s:1 — feeds the adjustment chain), dividend ($/share,
   date = ex-date), spinoff (new shares per original share). Paired events
   use `contraticker/contraname` (tickerchange, acquisition, relation,
@@ -122,8 +157,8 @@ WHERE table_name = 'SF1' AND indicator = 'revenue';
 * `close` is the **as-traded** price (it gaps at stock splits).
 * `adjustment = closeadj / close(t)` where `closeadj` is the vendor's
   total-return-adjusted close, normalized so `adjustment = 1.0` on the
-  latest quote. Apply `adjusted = raw × adjustment` for any OHLC field
-  (volume stays as traded).
+  latest quote. Apply `adjusted = raw × adjustment` for any OHLC field.
+* **Correction (2026-11-06): `prices.volume` is the vendor's split-adjusted volume, not as traded.** It is expressed in the share units after every later split (fractions of a share appear), and the loader truncates it with `int()`. As traded = volume ÷ (the vendor's `closeunadj / close` on that row); dividing gives whole shares on 97% of rows before a later split. Dollar volume from `close × volume` is wrong before every split. The store (`data_manager.store`, `warehouse.db`) keeps volume as traded.
 * **Construction (verified 2026-08-12):** adjustment is a *cumulative,
   multiplicative* chain — one factor per corporate action after the day
   (split `s:1` → `1/s`; cash dividend `d` on ex-date → `≈ 1 - d/c`), all
@@ -177,7 +212,27 @@ WHERE table_name = 'SF1' AND indicator = 'revenue';
   `date` as `datekey` for caller compatibility). Do NOT re-introduce a
   blob/lite-column split — this is a storage/query project: serve the
   vendor schema as-is.
-* PIT market cap: `close × shareswa` (ARQ/ARY ≤ date).
+* **PIT market cap: `prices.close × shares_pit.shares`** (the `shares_pit` row with the
+  latest `from_date ≤ D`). **Never `close × shareswa`:** SF1 share counts (`shareswa`,
+  `sharesbas`, ...) are restated by the vendor for every split *after* the filing, exactly like
+  SF1 `price` (AAPL's 2014 filings carry ~24.5B shares, ~28× the count then outstanding, after
+  7:1 in 2014 and 4:1 in 2020). Multiplying them by an as-traded close overstates market cap by
+  every later split and leaks future splits (stocks split after they rise). `shares_pit` divides
+  each filing's count by the splits after the date; it changes at every filing and every split
+  ex-date. The count is **`sharesbas × sharefactor`** (period-end basic shares × the ADR factor,
+  the vendor's own `marketcap` basis), falling back to `shareswa` only where `sharesbas` is
+  missing (`share_field` says which): the weighted average lags issuance (off by >5% for ~8% of
+  filings). Restated counts remain correct for comparisons between periods of the same stock
+  (they share one basis), e.g. the F-Score's equity-issuance test.
+  Verified 2026-10-25 on the full history: `close × shareswa` fell by the split ratio on 94% of
+  2,716 split days and matched SF1 `marketcap` within 5% at only 75% of ARQ report dates;
+  `close × shares_pit` is flat across split days and matches SF1 `marketcap` within 1% at 99.9%.
+* **The same restatement applies to every SF1 per-share and share-count field** (`price`,
+  `eps`, `epsdil`, `bvps`, `dps`, `fcfps`, `sps`, `tbvps`, `shareswa`, `shareswadil`,
+  `sharesbas`): ratios between two of them, or with `marketcap`, are split-invariant, but their
+  *levels* are in the latest share units. Ranking stocks on a level imports future splits; to
+  put a level on the as-of basis, multiply per-share fields by (shares divide by) the
+  `split_factor` of the matching `shares_pit` row.
 * **DO NOT use the SF1 `price` column as an as-traded price / factor.** It is **split-adjusted to forward time**: adjusted for splits/reverse-splits that occur *after* the point-in-time date (e.g. AAPL SF1`price`=106.26 for a period whose genuine traded price was ~$425, i.e. ÷4:1 split that came later; reverse-split penny stocks are distorted by factors 10^9-10^17). Using it to sort/rank cross-sectionally leaks future info (look-ahead) and mis-ranks stocks on true 'cheapness'. For a genuine price-level factor use `prices.close` (as-traded) at the rebalance date; keep `close × adjustment` for *returns* only. Do NOT drop the column (keep the 112-field vendor schema) — just stop using it.
  Banks' `grossmargin`
   ≈ 1.0 and `fcf` structurally negative — expected artifacts.
@@ -280,6 +335,13 @@ same (ticker, quarter, investor, class), the loader collapses on the key.
   31). This is the reporting quarter-end, **not** the filing date (13F filings
   lag by up to ~45 days), so for a point-in-time signal treat the holding as
   known only once the quarter has ended **and** the form is filed.
+* **VERIFIED (2026-08-25):** the vendor does **NOT** add the filing lag. Sharadar's
+  data dictionary describes `calendardate` as "the last day of the calendar
+  quarter" (pure period date). EDGAR spot-check (Berkshire 13F-HR): the
+  2023-12-31 quarter-end holdings were **filed 2024-02-14 (45 days later)**; the
+  stored AAPL 2023-12-31 SHR row (905,560 units = 905.56M sh, value 174,347.5)
+  matches EDGAR's infotable **exactly**. So treat holdings as knowable only at
+  quarter-end + ~45d; do **not** add a second lag.
 * **`investorname`** is the vendor's sticky 6-char institutional investor code
   (vendor column `investorid`; e.g. `MARKOW`, `WASHI2`). It is NOT a readable
   name — join/lookup investor identity elsewhere if names are needed.
@@ -300,12 +362,52 @@ same (ticker, quarter, investor, class), the loader collapses on the key.
 
 One row per (trading day, member). Membership iff, **as of that day**:
 Domestic Common Stock (Primary/Second class), as-traded close ≥ $2, trailing
-20-session avg $volume ≥ $5M (≥10 sessions), PIT mcap ≥ $300M, quote ≤ 10
-calendar days old. The stored `price/mcap/dvol_avg/dvol_days` is the **most
+20-session avg $volume ≥ $5M (≥10 sessions), PIT mcap (`close × shares_pit`,
+see SF1 above) ≥ $300M, quote ≤ 10 calendar days old. A rebuild deletes every
+stored row in its window first, so a (day, name) that no longer qualifies does
+not survive (before 2026-10-25 a rebuild only upserted, so stale members could
+persist; and mcap used restated shares, which put names that later split into
+the universe early and kept reverse-split names out). The stored `price/mcap/dvol_avg/dvol_days` is the **most
 recent valid quote ≤ that day** (fixed 2026-08-12 — a continuous name must
 carry today's profile, not its 1998 one; regression-tested). Index:
 `idx_pit_asof` — always filter by `as_of` first; do not aggregate thousands
 of members across all days without the as_of predicate.
+
+## Point-in-time contract (read before any backtest)
+
+A value is point-in-time only if it was **known on the decision date, in that day's units**.
+For each table: the column that says when a row became known, what its levels are in, what is
+safe, and the remedy for what is not. Audited 2026-10-25 against EDGAR and the vendor's own
+numbers; `data-manager pit-audit` re-checks the invariants marked ✓ after every bulk update.
+Prefer the accessors in `data_manager.pit` (`pit_members`, `pit_market_cap`, `pit_fundamentals`,
+`pit_shares`, `split_factor_after`) to hand-written joins: they take any calendar date and apply a
+fact from its knowledge date onward.
+
+| table | known on | levels are in | safe | not safe → remedy |
+|---|---|---|---|---|
+| `prices.close/open/high/low` | `date` (as-traded) | that day's units | levels, $ thresholds | — |
+| `prices.volume` | `date` | **latest share units** (split-adjusted by the vendor; truncated by the loader) | counting days with trades | dollar volume, $ liquidity screens → volume ÷ (`closeunadj/close`), or the store's `volume_traded` |
+| `prices.adjustment` | `date` | latest units (folds in every later split/dividend) | return ratios | levels as of D → rebase `adj(t)/adj(D)` (§Prices) |
+| `sf1` ARQ/ARY/ART | `date` = SEC filing date (98.8% exactly EDGAR's; 0.09% earlier) | **dollar totals: as filed. Per-share fields and share counts: latest share units** | dollar totals; ratios between fields; `marketcap`, `pe`, `pb`, `ps` (vendor-computed at `date`) | per-share/share-count **levels** (`price`, `eps`, `epsdil`, `epsusd`, `bvps`, `dps`, `sps`, `fcfps`, `tbvps`, `sharesbas`, `shareswa`, `shareswadil`) → `pit_fundamentals(split_basis=True)` |
+| `sf1` AR values | | the **original** filing's (99.9%; 99.3% of later-restated periods keep the original, 0.0% the restatement) | as-of use with `date <= D` | — |
+| `sf1` MRQ/MRY/MRT | indexed to the report period | **restated after the fact** | research on final numbers only | any backtest → use AR* (the accessor refuses MR* unless `allow_restated=True`) |
+| `sf1` `roa`, `roe`, `ros`, `roic`, averages | | empty in ARQ | use the ART/ARY row of the same filing | — |
+| `split_events` ✓ | `date` = ex-date | | **every split ratio product** (split factors, share basis) | multiplying raw `corporate_actions` split rows → a re-served split is counted twice (1,572 after the 2026-10-26 refresh) |
+| `shares_pit` ✓ | `from_date` (filing date or split ex-date) | that day's units | `close × shares` = PIT market cap | — |
+| `universe_pit` ✓ | `as_of` | profile is that day's quote | membership and profile on `as_of` | `sector`/`industry` are the **latest** classification on every day (no history exists) |
+| `fundamentals`, `quarterly_statements` ✓ | `filing_date` (added 2026-10-25) | as filed (`shares_out` mirrors restated `shareswa`) | as-of on `filing_date` | a fixed lag after period end (2.1% of annual filings come out >180 days after Dec 31) → use `filing_date` |
+| `ratios`, `metrics` | snapshot date | latest | current screens | **never history** — snapshots, not point-in-time |
+| `securities_master` | current | latest | identity, current labels | historical classification → none available |
+| `corporate_actions` | `date` = effective/completion date (split ex-date; acquisition/delisting completion: TWTR 2022-10-27, announced in April; LEHMQ bankruptcy dated its 2008-10-15 delisting) | | splits (ex-date known in advance), events as of completion | an event *signal* at announcement → not in this table |
+| `sp500_membership` | `date` = effective date (TSLA 2020-12-21, announced 2020-11-16) | | membership as of D | index-change announcement signals → not in this table |
+| `insider_transactions` (SF2) | `filingdate` | as-traded | filter `filingdate <= D` | `transactiondate` alone → look-ahead |
+| `institutional_ownership` (SF3) | `calendardate` = quarter end; filed ~45 days later | | `calendardate + 45d <= D` | quarter-end dating → look-ahead |
+| `french_factors` | `date` | — | returns | the Ken French library revises history between releases (no vintages kept) |
+
+**Joins.** An as-of join must carry a fact from its knowledge date to every later date, including
+when the knowledge date is not a trading day. Reindexing a sparse series straight onto trading
+dates silently drops every weekend-dated fact (52/53-week filers' Saturday period ends + a lag land
+on Sundays; Dec 31 + 180 days is a weekend in some years).
 
 ## Gotchas that bite
 
@@ -350,7 +452,9 @@ of members across all days without the as_of predicate.
      moved forward together.
    * Spot check a well-known name (AAPL last close sane; 2026 profile
      ≈ live price, 1998-01-14 ≈ $19.75 — the fixed-profile fingerprint).
-   * `uv run pytest -q` (96 tests, incl. the PIT profile regression).
+   * `uv run pytest -q` (127 tests, incl. the PIT profile, PIT-shares, split-events and pit-audit regressions).
+   * `uv run data-manager pit-audit` must report no `error` (bulk-update runs it and fails on
+     one); results accumulate in `pit_audit_runs`. See "Point-in-time contract".
 5. Cadence: the bulk zips are daily; a morning `bulk-update` + `optimize-db`
    keeps the warehouse current. `bulk-fromzero` is the full rebuild path
    (downloads everything, wipes, loads, derives, PIT, optimizes).

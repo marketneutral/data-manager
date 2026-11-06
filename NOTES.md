@@ -1,5 +1,49 @@
 # Data Manager Notes (Sharadar era)
 
+## Refresh re-served splits: split_events (2026-10-26)
+
+- **Found by pit-audit** on the first refresh since 2026-08 (bulk-update, 10.7 h): split-day mcap
+  continuity fell to 0.9469 (< 0.95). The new ACTIONS file re-serves old splits at more decimals
+  (GPT4 0.33333 → 0.333333333) and moves some weekend-dated ones to the next trading day;
+  `corporate_actions` is keyed on the value, so the upsert added 1,582 same-date duplicates beside
+  the old rows. Every split product squared those ratios (a 1:3 reverse split became 1:9 in
+  `shares_pit` and `universe_pit.mcap`). Pre-existing: 70 same-ratio pairs a few days apart (MNST
+  2026-08-10 and 08-11; the close halves on 08-11).
+- **Fix:** raw rows untouched; new derived `split_events` (one row per split; the price move picks
+  among conflicting values and near-date copies, and keeps two same-ratio splits only when the close
+  confirms each). `shares_pit`, the universe builders and `pit.split_factor_after` read it.
+  pit-audit gains `split_events_distinct` and `split_events_current` (12 checks).
+
+## Point-in-time audit, pit-audit, accessors (2026-10-25)
+
+- **Audit (EDGAR + vendor cross-checks):** SF1 AR `date` = EDGAR's original 10-Q/10-K filing date on
+  98.8% of 3,304 rows (60 random companies, all eras; 0.09% earlier). AR values = the original filing
+  on 99.9% of 4,857 rows; of 152 periods later restated, SF1 kept the original on 99.3%, the
+  restatement on 0.0%. Classifications have no history; corporate actions and S&P changes are dated
+  on completion/effective dates. Details in AGENTS.md, "Point-in-time contract".
+- **Fixed:** `universe_pit` bridged *failing* quotes for up to 10 days on the last passing profile
+  (LEHMQ a $2.5B member at $0.05): now a failing quote ends membership; −359,487 member-days (2.7%).
+  `fundamentals` and `quarterly_statements` gain `filing_date`.
+- **New:** `data-manager pit-audit` (10 invariants, ledger `pit_audit_runs`, run by bulk-update);
+  `data_manager.pit` accessors. Freshness: prices end 2026-08-11 (bulk-update not run since).
+
+## PIT shares and market cap fixed (2026-10-25)
+
+- **Bug:** `universe_pit.mcap` (and its $300M screen) was `close × shareswa`. SF1 share counts are
+  restated for every split *after* the filing (like SF1 `price`), so market cap was overstated by
+  every later split (AAPL 2014-06-06: $15.8T) and leaked future splits into membership (names that
+  later split entered early; reverse-split names were kept out). `shareswa` is also the quarter's
+  weighted average, which lags issuance (IPOs, SPACs).
+- **Fix:** new derived table `shares_pit` (point-in-time shares: `sharesbas × sharefactor`, else
+  `shareswa`, divided by the splits after the date; a row per filing and per split ex-date), and
+  both universe builders read it via `pit_share_events`. Rebuilds now delete their window first, so
+  stale members do not survive (previously a rebuild only upserted).
+- **Validation (full history):** PIT mcap matches SF1 `marketcap` within 5% at 99.0% of 214,473 ARQ
+  report dates (was 75.2%), median ratio 1.0000; flat across 97% of split days (was 9.6%).
+  Membership: +100,202 / −72,338 member-days of 13.49M (1.3%); removals dominate before 2004
+  (future-split lookahead), additions after 2019 (period-end vs weighted-average shares).
+- Backup before the rebuild: `~/.prime/agent/data_manager.pre-mcapfix.db`.
+
 ## Fresh start — 2026-08-11 (FMP removed)
 
 - Sharadar is the sole data provider (`SHARADAR_API_KEY` in ~/.env).
@@ -221,6 +265,9 @@ Verified bulk-file facts:
 - funds bulk full = 15,473,734 rows; fundamentals bulk = 3,212,940 rows,
   SIX dimensions ARY/MRY/ARQ/MRQ + ART/MRT (TTM), datekey=report date, 1990->
 - bulk price volume is AS-TRADED (FAQ text says split-adjusted - trust the file)
+  **WRONG — corrected 2026-11-06:** volume is split-adjusted, as the FAQ says. Evidence: across
+  7,860 splits it does not jump by the ratio; 6.8% of values are fractions of a share; volume ÷
+  (closeunadj/close) is whole shares on 97% of pre-split rows against 73% undivided.
 
 GOTCHA (2026-08-11): a hand-written /tmp loader script had a template bug
 (`'funds' == 'funds' and DELETE FROM prices`) that wiped the stocks rows after

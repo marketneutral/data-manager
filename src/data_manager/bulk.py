@@ -137,7 +137,7 @@ def bulk_fromzero(dest_dir: str = DEFAULT_DIR, conn=None, pit_asof: str = None,
                   derive: bool = True, pit: bool = True) -> dict:
     """Full rebuild: download every bulk zip, wipe, load, derive, build PIT."""
     from .universe import (build_piotroski, build_quarterly, build_ratios,
-                          build_universe_pit_history)
+                          build_shares_pit, build_universe_pit_history)
     conn = conn or db.connect()
     print("[bulk] from-zero: downloading all tables (full history)", flush=True)
     for table in BULK_TABLES:
@@ -160,8 +160,11 @@ def bulk_fromzero(dest_dir: str = DEFAULT_DIR, conn=None, pit_asof: str = None,
         counts["piotroski"] = build_piotroski(conn)
         counts["quarterly"] = build_quarterly(conn)
         counts["ratios"] = build_ratios(conn)
+        counts["shares_pit"] = build_shares_pit(conn)   # before PIT: the universe reads its definition
     if pit:
         counts["pit"] = build_universe_pit_history(conn)
+        from . import pit_audit                      # point-in-time invariants on the rebuilt warehouse
+        counts["pit_audit"] = pit_audit.run(conn)["status"]
     # optimize so a from-zero rebuild yields a performant database
     from . import dbopt as OP
     OP.optimize_db(conn, vacuum=True, quick=True)
@@ -175,7 +178,7 @@ def bulk_update(dest_dir: str = DEFAULT_DIR, conn=None, tables=None,
     """Incremental update: only re-download + reload tables whose bulk file
     changed since the last sync (manifest), then re-derive local tables."""
     from .universe import (build_piotroski, build_quarterly, build_ratios,
-                          build_universe_pit_history)
+                          build_shares_pit, build_universe_pit_history)
     conn = conn or db.connect()
     tables = tables or list(BULK_TABLES)
     loaded, skipped = {}, []
@@ -194,8 +197,11 @@ def bulk_update(dest_dir: str = DEFAULT_DIR, conn=None, tables=None,
         loaded_core["piotroski"] = build_piotroski(conn)
         loaded_core["quarterly"] = build_quarterly(conn)
         loaded_core["ratios"] = build_ratios(conn)
+        loaded_core["shares_pit"] = build_shares_pit(conn)
     if pit and loaded_core:
         loaded_core["pit"] = build_universe_pit_history(conn)
+        from . import pit_audit                      # point-in-time invariants on the rebuilt warehouse
+        loaded_core["pit_audit"] = pit_audit.run(conn)["status"]
     loaded = loaded_core
     # Ken French daily factor returns (separate source; refreshed every
     # update pass so one command keeps the whole warehouse current —

@@ -70,3 +70,15 @@ def test_main_update_prices_requires_tickers(tmp_path, capsys):
                    "--db", str(tmp_path / "p.db")])
     assert rc == 1
     assert "No tickers" in capsys.readouterr().out
+
+
+def test_main_build_shares_pit(tmp_path, capsys):
+    from data_manager import db
+    path = tmp_path / "b.db"
+    c = db.connect(path)
+    c.execute("INSERT INTO sf1 (ticker, dimension, date, reportperiod, shareswa) VALUES ('X','ARQ','2020-01-02','2020-01-02',4e6)")
+    c.execute("INSERT INTO corporate_actions (ticker, date, action, value) VALUES ('X','2021-01-04','split','2.0')")
+    c.commit(); c.close()
+    rc = cli.main(["build-shares-pit", "--db", str(path)])
+    assert rc == 0
+    assert "PIT share-count rows derived: 2." in capsys.readouterr().out

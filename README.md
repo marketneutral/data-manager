@@ -124,7 +124,9 @@ definitions are written into the `descriptions` table by the loader.
 date, open, high, low, close, volume — **raw as-traded** prices; `adjustment` =
 per-day factor (splits + dividends). **Adjust at query time:**
 `adjusted_prices(ticker, start, end)` returns `adjusted_open/high/low/close =
-raw × adjustment`. Volume stays as traded.
+raw × adjustment`.
+
+**Correction (2026-11-06): `prices.volume` is the vendor's split-adjusted volume, not as traded.** It is expressed in the share units after every later split (fractions of a share appear), and the loader truncates it with `int()`. As traded = volume ÷ (the vendor's `closeunadj / close` on that row); dividing gives whole shares on 97% of rows before a later split. Dollar volume from `close × volume` is wrong before every split. The store (`data_manager.store`, `warehouse.db`) keeps volume as traded.
 
 ### `classifications` (PK: ticker)
 sector (mapped to 11 GICS labels; unmapped -> NULL = fails closed for the stock-factor inclusion filter), industry, as_of.
@@ -145,6 +147,24 @@ raw fraction (0.0042 = 0.42%).
 net_income, revenue, gross_profit, operating_cash_flow, total_assets,
 total_liabilities, current_assets, current_liabilities, shares_out, roa, cfo.
 
+### `split_events` — one row per split (PK: ticker, date)
+ratio (s in s:1), raw_rows (corporate_actions rows merged), rule. Derived from the
+raw split rows, which can hold one split twice after a refresh re-serves it: rows on
+one date are one split (the most precise value; the price move decides a real
+conflict), and same-ratio rows within 10 days are one split unless the as-traded
+close confirms each. Rebuilt by `build-shares-pit` and the universe builders. Use it,
+not `corporate_actions`, for any product of split ratios.
+
+### `shares_pit` — point-in-time shares outstanding (PK: ticker, from_date)
+shares (as-traded units as of `from_date`), filing_date, restated_shares (SF1
+`sharesbas × sharefactor` as served, or `shareswa` where `sharesbas` is missing;
+`share_field` says which), split_factor (product of `split_events` ratios after
+`from_date`; `shares = restated_shares / split_factor`). A row holds until the next
+`from_date` (a filing date or a split ex-date). PIT market cap on day D =
+`prices.close(D) × shares` of the latest row with `from_date ≤ D`. SF1 share
+counts alone are restated for later splits and must not be multiplied by an
+as-traded price.
+
 ### `snapshots`
 Provenance: source, pulled_at, as_of, row_count for each universe pull.
 
@@ -164,6 +184,9 @@ data-manager update-quarterly --all [--force] [--ticker A,B]
 data-manager update-ratios --all [--force] [--ticker A,B]
 data-manager update-sp500                              S&P500 membership
 data-manager update-french-factors [--force]          Ken French daily factor returns (3F/5F/Mom/ST/LT)
+data-manager build-shares-pit                          derive split_events and shares_pit (sf1 shares / later splits)
+data-manager pit-audit [--no-record]                   point-in-time invariants on the live warehouse; exit 1 on error
+data-manager build-universe-pit --history              rebuild universe_pit for every trading day
 data-manager enrich-cik | enrich-figi | enrich-sic     legacy SEC/OpenFigi enrichment
 ```
 
@@ -210,7 +233,7 @@ uv run data-manager bulk-update      [--tables a,b] [--force]  # manifest-skippe
 
 Tables: tickers, stocks (46.3M rows full, 1998->), funds, actions (673k),
 metrics (with history to 1997), sp500, fundamentals (6 dims incl. TTM ART/MRT,
-1990->). Bulk semantics verified: price volume is as-traded; OHLC split-adjusted
+1990->). Bulk semantics verified: OHLC split-adjusted, and so is volume (corrected 2026-11-06: it is not as-traded)
 (closeunadj = as-traded close); SF1 report date is `datekey`.
 
 Ken French factors are a separate source (not a Sharadar bulk zip): the five

@@ -219,6 +219,7 @@ def fscore_from_rows(rows: list[dict]) -> list[dict]:
 
         out.append({
             "fiscal_year": int(str(r.get("calendardate", ""))[:4]),
+            "filing_date": r.get("datekey") or None,   # SEC filing date of this ARY row: when it became known
             "roa": roa, "cfo": cfo,
             "d_roa": d_roa, "accruals": accruals, "d_leverage": d_leverage,
             "d_liquidity": d_liquidity, "equity_issuance": equity_issuance,
@@ -237,6 +238,7 @@ def quarterly_from_rows(rows: list[dict]) -> list[dict]:
         ta = _num(r.get("assets"))
         out.append({
             "period": str(r.get("reportperiod") or r.get("calendardate")),
+            "filing_date": r.get("datekey") or None,   # SEC filing date of this ARQ row: when it became known
             "net_income": ni,
             "revenue": _num(r.get("revenue")),
             "gross_profit": _num(r.get("gp")),

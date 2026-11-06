@@ -678,12 +678,12 @@ def build_piotroski(conn=None) -> int:
             conn.execute(
                 "INSERT OR REPLACE INTO fundamentals "
                 "(ticker, fiscal_year, roa, cfo, d_roa, accruals, d_leverage,"
-                " d_liquidity, equity_issuance, d_gross_margin, d_asset_turnover, f_score)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                " d_liquidity, equity_issuance, d_gross_margin, d_asset_turnover, f_score, filing_date)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (t, f["fiscal_year"], f.get("roa"), f.get("cfo"), f.get("d_roa"),
                  f.get("accruals"), f.get("d_leverage"), f.get("d_liquidity"),
                  f.get("equity_issuance"), f.get("d_gross_margin"),
-                 f.get("d_asset_turnover"), f.get("f_score")))
+                 f.get("d_asset_turnover"), f.get("f_score"), f.get("filing_date")))
         total += len(fund)
         conn.commit()
     return total
@@ -703,11 +703,11 @@ def build_quarterly(conn=None) -> int:
                 "INSERT OR REPLACE INTO quarterly_statements "
                 "(ticker, period, net_income, revenue, gross_profit, operating_cash_flow,"
                 " total_assets, total_liabilities, current_assets, current_liabilities,"
-                " shares_out, roa, cfo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " shares_out, roa, cfo, filing_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (t, r["period"], r["net_income"], r["revenue"], r["gross_profit"],
                  r["operating_cash_flow"], r["total_assets"], r["total_liabilities"],
                  r["current_assets"], r["current_liabilities"], r["shares_out"],
-                 r["roa"], r["cfo"]))
+                 r["roa"], r["cfo"], r.get("filing_date")))
         total += len(q)
         conn.commit()
     return total
@@ -743,6 +743,225 @@ def build_ratios(conn=None) -> int:
     return total
 
 
+# ---- Split events ----
+# corporate_actions mirrors every split row the vendor has ever served, and its key
+# includes the value, so a refresh that re-serves an old split at more decimal
+# places (0.33333 -> 0.333333333) or moves it to the next trading day adds a row
+# beside the old one instead of replacing it. Every consumer multiplies split
+# ratios, so a doubled row squares the factor. split_events is the one-row-per-
+# split view the derived tables use:
+#   * rows on the same ticker and date are one split; the most precise value wins,
+#     or, when the values disagree by more than 1%, the one matching the price move;
+#   * rows with the same ratio (within 1%) within SPLIT_CLUSTER_DAYS are one split
+#     unless the as-traded close confirms each of them separately (vendor prices
+#     sometimes carry the split twice, and the shares must agree with the prices).
+# A row's price move is the last close before its first trading day over that
+# day's close; it confirms ratio s when it is within 25% of s.
+SPLIT_CLUSTER_DAYS = 10
+
+
+def _split_move(conn, ticker, date):
+    """(first trading day >= date, prev close / close) or (None, None) without quotes."""
+    row = conn.execute("SELECT date, close FROM prices WHERE ticker=? AND date >= ? AND date <= date(?, '+7 days')"
+                       " AND close > 0 ORDER BY date LIMIT 1", (ticker, date, date)).fetchone()
+    if not row:
+        return None, None
+    prev = conn.execute("SELECT close FROM prices WHERE ticker=? AND date < ? AND date >= date(?, '-10 days')"
+                        " AND close > 0 ORDER BY date DESC LIMIT 1", (ticker, row[0], row[0])).fetchone()
+    return row[0], (prev[0] / row[1] if prev else None)
+
+
+def _fit(move, ratio):
+    import math
+    return abs(math.log(move / ratio)) if move else math.inf
+
+
+def split_events(conn, ticker):
+    """[(date, ratio, raw_rows, rule)] for one ticker, oldest first; see the note above."""
+    import math
+    raw = conn.execute("SELECT date, value FROM corporate_actions WHERE ticker=? AND action='split'"
+                       " AND CAST(value AS REAL) > 0 ORDER BY date", (ticker,)).fetchall()
+    by_date = {}
+    for d, v in raw:
+        by_date.setdefault(d, []).append(v)
+    events = []                                   # [date, ratio, raw_rows, rule]
+    for d, vals in by_date.items():
+        rs = [float(v) for v in vals]
+        if len(vals) == 1:
+            events.append([d, rs[0], 1, "single"])
+        elif max(rs) / min(rs) <= 1.01:
+            events.append([d, float(max(vals, key=lambda v: len(v.strip()))), len(vals), "same_date"])
+        else:
+            _, move = _split_move(conn, ticker, d)
+            best = min(rs, key=lambda r: _fit(move, r)) if move else float(max(vals, key=lambda v: len(v.strip())))
+            events.append([d, best, len(vals), "same_date_conflict"])
+    out, i = [], 0
+    while i < len(events):                        # cluster same-ratio rows within SPLIT_CLUSTER_DAYS
+        j = i + 1
+        while (j < len(events) and abs(math.log(events[j][1] / events[i][1])) <= math.log(1.01)
+               and (dt.date.fromisoformat(events[j][0]) - dt.date.fromisoformat(events[j - 1][0])).days <= SPLIT_CLUSTER_DAYS):
+            j += 1
+        cluster = events[i:j]
+        if len(cluster) == 1:
+            out.append(tuple(cluster[0]))
+        else:
+            by_day = {}                           # rows landing on the same trading day are one split
+            for e in cluster:
+                day, move = _split_move(conn, ticker, e[0])
+                by_day.setdefault(day or e[0], []).append((e, move))
+            cands = [(max(es, key=lambda x: x[0][0])[0], es[0][1], sum(x[0][2] for x in es)) for es in by_day.values()]
+            confirmed = [c for c in cands if _fit(c[1], c[0][1]) <= math.log(1.25)]
+            n_raw = sum(e[2] for e in cluster)
+            if len(confirmed) > 1:                # the prices carry each one: keep them all
+                out += [(c[0][0], c[0][1], c[2], "price_confirmed") for c in confirmed]
+            else:
+                keep = confirmed[0] if confirmed else min(cands, key=lambda c: (_fit(c[1], c[0][1]), -len(c[0][0]), c[0][0]))
+                if not confirmed and all(c[1] is None for c in cands):
+                    keep = max(cands, key=lambda c: c[0][0])   # no quotes at all: the latest date
+                out.append((keep[0][0], keep[0][1], n_raw, "near_date"))
+        i = j
+    return sorted(out)
+
+
+def build_split_events(conn=None) -> int:
+    """Derive split_events (one row per split) from the raw corporate_actions split rows."""
+    conn = conn or db.connect()
+    tickers = [r[0] for r in conn.execute("SELECT DISTINCT ticker FROM corporate_actions WHERE action='split'")]
+    conn.execute("DELETE FROM split_events")
+    n = 0
+    for t in tickers:
+        rows = [(t, *e) for e in split_events(conn, t)]
+        conn.executemany("INSERT INTO split_events (ticker, date, ratio, raw_rows, rule) VALUES (?,?,?,?,?)", rows)
+        n += len(rows)
+    conn.executemany(
+        "INSERT OR REPLACE INTO descriptions "
+        "(table_name, indicator, isfilter, isprimarykey, title, description, unittype) "
+        "VALUES (?,?,?,?,?,?,?)", SPLIT_EVENTS_DESCRIPTIONS)
+    conn.commit()
+    return n
+
+
+SPLIT_EVENTS_DESCRIPTIONS = [
+    ("split_events", "ticker", "Y", "Y", "Ticker", "Sharadar ticker (current/last symbol).", "text"),
+    ("split_events", "date", "Y", "Y", "Ex-date", "Split ex-date (the date of the corporate_actions row kept).", "text"),
+    ("split_events", "ratio", "N", "N", "Split ratio", "s in an s:1 split (0.1 for a 1:10 reverse split).", "ratio"),
+    ("split_events", "raw_rows", "N", "N", "Raw rows",
+     "Number of corporate_actions split rows this split stands for (more than 1 when the vendor re-served it).", "units"),
+    ("split_events", "rule", "N", "N", "Merge rule",
+     "'single'; 'same_date' (duplicate values, the most precise kept); 'same_date_conflict' (values differ, the "
+     "price move picked one); 'near_date' (same ratio within days, one kept); 'price_confirmed' (same ratio within "
+     "days, each confirmed by the price move).", "text"),
+]
+
+
+# ---- PIT shares outstanding ----
+# SF1 share counts are restated by the vendor for every split after the filing,
+# like SF1 `price`: AAPL's 2014 filings carry ~24.5B shares, about 28x the count
+# then outstanding (7:1 in 2014, 4:1 in 2020). Multiplying them by an as-traded
+# close overstates market cap by every later split and leaks future splits. The
+# count as of day D, in D's as-traded units, is the restated count of the latest
+# filing <= D divided by the product of the split ratios with ex-date after D; it
+# changes at each filing and at each split ex-date.
+#
+# The count is period-end basic shares times the ADR share factor (sharesbas x
+# sharefactor), the vendor's own marketcap basis: close x that count / later splits
+# matches SF1 marketcap within 1% at 99.9% of ARQ report dates, against 71.5% for
+# the quarter's weighted average (shareswa), which lags issuance. shareswa is the
+# fallback when sharesbas is missing.
+
+def pit_share_events(conn, ticker):
+    """Point-in-time share counts for one ticker, oldest first.
+
+    Returns [(from_date, shares, filing_date, restated_shares, split_factor,
+    share_field)], one row per SF1 ARQ/ARY filing and per split ex-date after the
+    first filing; each count holds from its from_date until the next row's. When
+    ARQ and ARY share a filing date, ARQ wins.
+    """
+    import bisect
+    rows = conn.execute(
+        "SELECT date, sharesbas, sharefactor, shareswa FROM sf1 WHERE ticker=?"
+        " AND dimension IN ('ARQ','ARY') ORDER BY date, dimension DESC", (ticker,)).fetchall()
+    filings = []
+    for d, bas, factor, wa in rows:
+        if bas and bas > 0:
+            filings.append((d, bas * (factor if factor and factor > 0 else 1.0), "sharesbas"))
+        elif wa and wa > 0:
+            filings.append((d, wa, "shareswa"))
+    if not filings:
+        return []
+    splits = conn.execute("SELECT date, ratio FROM split_events WHERE ticker=? ORDER BY date", (ticker,)).fetchall()
+    split_dates = [d for d, _ in splits]
+    after = [1.0] * (len(splits) + 1)          # after[i] = product of ratios of splits[i:]
+    for i in range(len(splits) - 1, -1, -1):
+        after[i] = after[i + 1] * splits[i][1]
+    latest = {}                                 # filing date -> (restated count, field); ARQ last, so it wins
+    for d, n, field in filings:
+        latest[d] = (n, field)
+    starts = sorted(set(latest) | {d for d in split_dates if d > filings[0][0]})
+    events, fi, cur = [], 0, None
+    fdates = sorted(latest)
+    for d in starts:
+        while fi < len(fdates) and fdates[fi] <= d:
+            cur = fdates[fi]
+            fi += 1
+        f = after[bisect.bisect_right(split_dates, d)]   # splits with ex-date after d
+        n, field = latest[cur]
+        events.append((d, n / f, cur, n, f, field))
+    return events
+
+
+def _shares_on(events, dates, day):
+    """Shares outstanding on `day` from pit_share_events (None before the first filing)."""
+    import bisect
+    i = bisect.bisect_right(dates, day)
+    return events[i - 1][1] if i else None
+
+
+def build_shares_pit(conn=None) -> int:
+    """Derive shares_pit (point-in-time shares outstanding) for every stock with SF1 shares.
+
+    Rebuilds split_events first, so the splits it divides by are the current ones.
+    """
+    conn = conn or db.connect()
+    build_split_events(conn)
+    tickers = [r[0] for r in conn.execute(
+        "SELECT DISTINCT ticker FROM sf1 WHERE dimension IN ('ARQ','ARY')"
+        " AND (sharesbas > 0 OR shareswa > 0)")]
+    conn.execute("DELETE FROM shares_pit")
+    n = 0
+    for t in tickers:
+        rows = [(t, *e) for e in pit_share_events(conn, t)]
+        conn.executemany("INSERT INTO shares_pit (ticker, from_date, shares, filing_date,"
+                         " restated_shares, split_factor, share_field) VALUES (?,?,?,?,?,?,?)", rows)
+        n += len(rows)
+    conn.executemany(
+        "INSERT OR REPLACE INTO descriptions "
+        "(table_name, indicator, isfilter, isprimarykey, title, description, unittype) "
+        "VALUES (?,?,?,?,?,?,?)", SHARES_PIT_DESCRIPTIONS)
+    conn.commit()
+    return n
+
+
+SHARES_PIT_DESCRIPTIONS = [
+    ("shares_pit", "ticker", "Y", "Y", "Ticker", "Sharadar ticker (current/last symbol).", "text"),
+    ("shares_pit", "from_date", "Y", "Y", "From date",
+     "First day the count applies: an SF1 ARQ/ARY filing date or a split ex-date. Holds until the next row's from_date.", "text"),
+    ("shares_pit", "shares", "N", "N", "Shares outstanding (point-in-time)",
+     "Shares outstanding as of from_date in that day's as-traded units: restated_shares / split_factor. "
+     "Multiply by the as-traded prices.close for a point-in-time market cap.", "units"),
+    ("shares_pit", "filing_date", "N", "N", "Source filing date",
+     "Date of the SF1 ARQ/ARY row the count comes from (ARQ wins on a shared date).", "text"),
+    ("shares_pit", "restated_shares", "N", "N", "Vendor shares (restated)",
+     "That row's SF1 count as served (sharesbas x sharefactor, or shareswa when sharesbas is missing): "
+     "restated for every split after the filing.", "units"),
+    ("shares_pit", "split_factor", "N", "N", "Later-split factor",
+     "Product of the split ratios (s in s:1) with ex-date after from_date; 1.0 when none.", "ratio"),
+    ("shares_pit", "share_field", "N", "N", "Source share field",
+     "'sharesbas' (period-end basic shares x the ADR sharefactor, the vendor's marketcap basis) or "
+     "'shareswa' (weighted average, used only when sharesbas is missing).", "text"),
+]
+
+
 # ---- PIT universe construction ----
 _PIT_DEFAULT_TYPES = ("Domestic Common Stock", "Domestic Common Stock Primary Class",
                       "Domestic Common Stock Secondary Class")
@@ -756,11 +975,15 @@ def build_universe_pit(conn=None, as_of=None, min_price: float = 2.0,
 
     As of `as_of`: a stock is investable iff it traded recently enough, its last
     as-traded close >= min_price, trailing avg $volume >= min_dvol over the
-    lookback, and PIT market cap (close x latest as-reported shares) >= min_mcap.
+    lookback, and PIT market cap (close x point-in-time shares on the close's
+    date, see pit_share_events) >= min_mcap. Rows already stored for `as_of`
+    are replaced, including names that no longer qualify.
     """
     conn = conn or db.connect()
+    build_split_events(conn)                    # the splits the PIT shares divide by
     as_of = as_of or dt.date.today().isoformat()
     types = types or _PIT_DEFAULT_TYPES
+    conn.execute("DELETE FROM universe_pit WHERE as_of=?", (as_of,))
     placeholders = ",".join("?" * len(types))
     cands = conn.execute(
         "SELECT ticker, category, exchange, isdelisted, sector, industry,"
@@ -787,10 +1010,9 @@ def build_universe_pit(conn=None, as_of=None, min_price: float = 2.0,
         dvol_days = len(dvol)
         if dvol_days < min_dvol_days or (sum(dvol) / dvol_days) < min_dvol:
             continue
-        sh = conn.execute(
-            "SELECT shareswa FROM sf1 WHERE ticker=? AND dimension IN ('ARQ','ARY')"
-            " AND date<=? ORDER BY date DESC LIMIT 1", (ticker, as_of)).fetchone()
-        mcap = last_close * sh[0] if (sh and sh[0]) else None
+        events = [e for e in pit_share_events(conn, ticker) if e[2] <= as_of]
+        sh = _shares_on(events, [e[0] for e in events], last_date)
+        mcap = last_close * sh if sh else None
         if mcap is None or mcap < min_mcap:
             continue
         conn.execute(
@@ -813,24 +1035,31 @@ def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
 
     Strategy (fast, unlike per-date loops): for each stock, walk its own price
     rows once, keeping a rolling $volume window (last `lookback` sessions) and
-    a pointer to the latest as-reported shares (SF1 ARQ/ARY <= row date).
+    a pointer into its point-in-time share counts (pit_share_events: the latest
+    SF1 ARQ/ARY filing <= row date, divided by the splits after the row date).
     A price row is "valid" when close >= min_price, rolling avg $volume >=
-    min_dvol with >= min_dvol_days sessions, and close*shareswa >= min_mcap.
+    min_dvol with >= min_dvol_days sessions, and close * PIT shares >= min_mcap.
     Membership on any calendar day D requires the most recent valid price row
     <= D to be within max_quote_age calendar days (fresh quote). Validity runs
     are merged and expanded onto the global trading-day calendar, stored in
-    universe_pit(as_of, ticker, ...) -- a row per (day, member).
+    universe_pit(as_of, ticker, ...) -- a row per (day, member). Every stored
+    row in the rebuilt window [start, end] is deleted first, so a (day, name)
+    that no longer qualifies does not survive a rebuild.
 
     Returns the number of member-day rows stored.
     """
     import bisect
     conn = conn or db.connect()
+    build_split_events(conn)                    # the splits the PIT shares divide by
     types = types or _PIT_DEFAULT_TYPES
     trading = [r[0] for r in conn.execute("SELECT DISTINCT date FROM prices ORDER BY date")]
     if start:
         trading = [d for d in trading if d >= start]
     if end:
         trading = [d for d in trading if d <= end]
+    if trading:
+        conn.execute("DELETE FROM universe_pit WHERE as_of >= ? AND as_of <= ?",
+                     (trading[0], trading[-1]))
     placed = ",".join("?" * len(types))
     cands = conn.execute(
         "SELECT ticker, category, exchange, isdelisted, sector, industry,"
@@ -856,16 +1085,16 @@ def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
             (ticker,)).fetchall()
         if not prices:
             continue
-        shares = conn.execute(
-            "SELECT date, shareswa FROM sf1 WHERE ticker=? AND dimension IN ('ARQ','ARY')"
-            " AND shareswa IS NOT NULL ORDER BY date", (ticker,)).fetchall()
+        shares = pit_share_events(conn, ticker)
         si = 0
         # rolling window over sessions (rows are trading sessions for this ticker)
         wsum, wct, wq = 0.0, 0, []
         valid = []          # (price_row_date, last_close, mcap, dvol_avg, dvol_ct)
+        priced = []         # every session with a quote, valid or not
         for d, close, volume in prices:
             if d < (trading[0] if trading else "0000") or close is None:
                 continue
+            priced.append(d)
             while si < len(shares) and shares[si][0] <= d:
                 si += 1
             swa = shares[si - 1][1] if si else None
@@ -883,10 +1112,22 @@ def build_universe_pit_history(conn, min_price=2.0, min_mcap=300_000_000.0,
                 valid.append((d, close, close * swa, dv, wct))
         if not valid:
             continue
-        # merge validity runs: membership days for row i = [d_i, min(d_{i+1}, d_i+max_quote_age)]
+        # merge validity runs. A valid row's membership runs until the name's next
+        # quoted session: through it if that session is valid too, up to the day
+        # before it if it fails the screens (a failing quote ends membership; only
+        # a gap in quotes is bridged), and at most max_quote_age calendar days.
+        # Before 2026-10-25 runs went to the next *valid* row, so failing quotes were
+        # bridged on a stale profile (LEHMQ was a $2.5B member at $0.05 in 2008-09).
+        valid_days = {v[0] for v in valid}
         runs = []   # each: [run_start, run_end, [valid tuples inside the run]]
         for i, (d, close, mcap, dv, dct) in enumerate(valid):
-            nxt = valid[i + 1][0] if i + 1 < len(valid) else (last or trading[-1])
+            k = bisect.bisect_right(priced, d)
+            if k == len(priced):                       # no later quote: bridge the gap
+                nxt = last or trading[-1]
+            elif priced[k] in valid_days:
+                nxt = priced[k]
+            else:                                      # next quote fails: stop the day before it
+                nxt = trading[bisect.bisect_left(trading, priced[k]) - 1]
             end = min(nxt, _add_days(d, max_quote_age))  # calendar-day cap
             if runs and runs[-1][1] >= d:
                 runs[-1][1] = max(runs[-1][1], end)

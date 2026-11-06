@@ -1,3 +1,4 @@
+import os
 """Command-line interface for the data-manager."""
 
 import argparse
@@ -23,6 +24,7 @@ from .universe import (
     build_piotroski,
     build_quarterly,
     build_ratios,
+    build_shares_pit,
     build_universe_pit,
     build_universe_pit_history,
     universe_tickers,
@@ -85,6 +87,11 @@ def main(argv=None):
     p_bq.add_argument("--db", default=None)
     p_br = sub.add_parser("build-ratios", help="Local: derive ratio snapshots from the sf1 MRY mirror.")
     p_br.add_argument("--db", default=None)
+    p_pa = sub.add_parser("pit-audit", help="Check the warehouse's point-in-time invariants; exit 1 on any error.")
+    p_pa.add_argument("--db", default=None)
+    p_pa.add_argument("--no-record", action="store_true", help="do not append the run to pit_audit_runs")
+    p_bs = sub.add_parser("build-shares-pit", help="Local: derive point-in-time shares outstanding (sf1 shares / later splits).")
+    p_bs.add_argument("--db", default=None)
     p_pit = sub.add_parser("build-universe-pit", help="Construct a PIT investable universe (master+prices+sf1).")
     p_pit.add_argument("--asof", default=None, help="YYYY-MM-DD (default today; ignored with --history).")
     p_pit.add_argument("--history", action="store_true", help="build the universe for EVERY trading day (1998->now)")
@@ -139,7 +146,39 @@ def main(argv=None):
     p_bu.add_argument("--no-pit", action="store_true")
     p_bu.add_argument("--db", default=None)
 
+    p_sl = sub.add_parser("store-load", help="Load vendor files into the store (warehouse.db): convert, compare, gate, commit.")
+    p_sl.add_argument("--dir", default=None, help="bulk zip directory for a full load (default ~/.prime/agent/bulk)")
+    p_sl.add_argument("--file", action="append", default=[], help="name=path for a vendor file (stocks, funds, tickers, actions, fundamentals)")
+    p_sl.add_argument("--increment", action="store_true", help="the files carry only what changed (a nightly load)")
+    p_sl.add_argument("--store", default=None)
+    p_sl.add_argument("--note", default=None)
+    p_ss = sub.add_parser("store-status", help="The store's loads and current row counts.")
+    p_ss.add_argument("--store", default=None)
+    p_sa = sub.add_parser("store-accept", help="Commit a quarantined load after review.")
+    p_sa.add_argument("load_id", type=int)
+    p_sa.add_argument("--by", required=True)
+    p_sa.add_argument("--note", default=None)
+    p_sa.add_argument("--store", default=None)
+    p_sr = sub.add_parser("store-reject", help="Reject a quarantined load.")
+    p_sr.add_argument("load_id", type=int)
+    p_sr.add_argument("--by", required=True)
+    p_sr.add_argument("--note", default=None)
+    p_sr.add_argument("--store", default=None)
+
+    p_ep = sub.add_parser("export-panel", help="Build a versioned panel (parquet + panel.json) from the store.")
+    p_ep.add_argument("--out", default=os.path.expanduser("~/data/panels"))
+    p_ep.add_argument("--store", default=None)
+    p_ep.add_argument("--load", type=int, default=None, help="build as of this load (default: the last accepted)")
+    p_ep.add_argument("--end", default=None, help="last date to include (YYYY-MM-DD)")
+
     args = parser.parse_args(argv)
+    if args.command == "export-panel":
+        from . import panel as P
+        folder, m = P.build(args.out, store=args.store, at=args.load, end=args.end)
+        print(f"panel {m['version']}: {m['n_tickers']:,} stocks x {m['n_dates']:,} days, {m['start']} to {m['end']}, from load {m['store']['load_id']} -> {folder}")
+        return 0
+    if args.command.startswith("store-"):
+        return _store_command(args)
     conn = db.connect(args.db)
 
     if args.command == "status":
@@ -236,6 +275,14 @@ def main(argv=None):
     elif args.command == "build-ratios":
         n = build_ratios(conn)
         print(f"Ratio snapshots derived: {n}.")
+    elif args.command == "pit-audit":
+        from . import pit_audit
+        res = pit_audit.run(conn, record=not args.no_record)
+        print(f"[pit-audit] overall: {res['status']}")
+        return 1 if res["status"] == "error" else 0
+    elif args.command == "build-shares-pit":
+        n = build_shares_pit(conn)
+        print(f"PIT share-count rows derived: {n}.")
     elif args.command == "build-universe-pit":
         types = tuple(args.types.split(",")) if args.types else None
         if args.history:
@@ -291,12 +338,49 @@ def main(argv=None):
             counts = B.bulk_fromzero(dest_dir=d, conn=conn, pit_asof=args.asof,
                                      derive=not args.no_derive, pit=not args.no_pit)
             print("FROM-ZERO DONE:", json.dumps(counts))
+            if counts.get("pit_audit") == "error":
+                print("[pit-audit] ERROR: a point-in-time invariant failed; see pit_audit_runs")
+                return 1
         else:
             tabs = [t.strip() for t in args.tables.split(",")] if args.tables else None
             res = B.bulk_update(dest_dir=d, conn=conn, tables=tabs, force=args.force,
                                 derive=not args.no_derive, pit=not args.no_pit, pit_asof=args.asof)
             print("UPDATE DONE: loaded", res["loaded"], "| skipped:", res["skipped"])
+            if res["loaded"].get("pit_audit") == "error":
+                print("[pit-audit] ERROR: a point-in-time invariant failed; see pit_audit_runs")
+                return 1
     return 0
+
+
+def _store_command(args):
+    """The store's commands; they never open the legacy data_manager.db."""
+    from .store import load as SL, read as SR, sharadar as SA
+    from .store.schema import connect as store_connect
+    if args.command == "store-load":
+        files = SA.bulk_files(args.dir or os.path.expanduser("~/.prime/agent/bulk")) if not args.file else {}
+        files.update(dict(f.split("=", 1) for f in args.file))
+        r = SL.load(files, mode="increment" if args.increment else "full", store=args.store, note=args.note)
+        print(json.dumps(dict(load_id=r["load_id"], status=r["status"], counts=r["summary"]["counts"],
+                              findings=r["summary"]["findings"], audit=r["summary"].get("audit")), indent=1, default=str))
+        return 0 if r["status"] == "accepted" else 2
+    if args.command == "store-status":
+        conn = store_connect(args.store, readonly=True)
+        for r in SR.loads(conn).itertuples():
+            print(f"load {r.load_id}: {r.status:11s} {r.mode:9s} through {r.data_through}  started {r.started_at}"
+                  + (f"  reviewed by {r.reviewed_by}" if isinstance(r.reviewed_by, str) and r.reviewed_by else ""))
+        for t in ("securities", "prices", "splits", "dividends", "other_adjustments", "shares"):
+            n = conn.execute(f"SELECT count(*) FROM {t} WHERE superseded_in IS NULL").fetchone()[0]
+            m = conn.execute(f"SELECT count(*) FROM {t} WHERE superseded_in IS NOT NULL").fetchone()[0]
+            print(f"  {t:18s} current {n:>12,}   superseded {m:>10,}")
+        return 0
+    if args.command == "store-accept":
+        r = SL.accept(args.load_id, args.by, store=args.store, note=args.note)
+        print(json.dumps(dict(load_id=r["load_id"], status=r["status"], counts=r["summary"].get("accepted_counts")), default=str))
+        return 0
+    if args.command == "store-reject":
+        SL.reject(args.load_id, args.by, store=args.store, note=args.note)
+        print(f"load {args.load_id} rejected")
+        return 0
 
 
 if __name__ == "__main__":
