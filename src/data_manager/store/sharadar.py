@@ -144,7 +144,8 @@ def detect_splits(px, actions=None):
     px: vendor rows with security_id, date, close, closeunadj, sorted by security and date.
     A step counts when it is larger than four times its rounding and than 0.5%. Its ratio is the ACTIONS split value
     within 10 days that fits it (how='action'). With no such row it is a split only if it is 20% or more and the
-    as-printed price moves by its ratio (within 1.5x) that day (how='factor'); otherwise it is the vendor's glitch (a
+    as-printed price moves by its ratio (within 1.5x) that day, or the same way by at least half of it in log terms
+    (a 1:16 reverse split on a day the price is x8.7) (how='factor'); otherwise it is the vendor's glitch (a
     day its split-adjusted series was mis-scaled), reported, and its rows keep the vendor's own factor."""
     px = px[(px.close > 0) & (px.closeunadj > 0)]
     f, tol = _factor(px)
@@ -171,7 +172,10 @@ def detect_splits(px, actions=None):
             if v > 0 and abs((ad - day).days) <= 10 and abs(math.log(v / s)) <= max(4 * nz, 0.01):
                 if best is None or abs(math.log(v / s)) < abs(math.log(best / s)):
                     best, how = v, "action"
-        if best is None and not (abs(math.log(s)) >= CONFIRM_MIN and abs(mv + math.log(s)) < CONFIRM_FIT):
+        confirmed = abs(math.log(s)) >= CONFIRM_MIN and (
+            abs(mv + math.log(s)) < CONFIRM_FIT                       # the price moves by the ratio
+            or (mv * -math.log(s) > 0 and abs(mv) >= 0.5 * abs(math.log(s))))  # or the same way by half of it (in logs)
+        if best is None and not confirmed:
             unconfirmed.append((sid, d, s))   # no ACTIONS row and the price does not move by it: a vendor glitch
             continue
         out.append((sid, d, best if best is not None else _nice(s, 4 * nz), how))

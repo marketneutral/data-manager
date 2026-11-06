@@ -283,3 +283,15 @@ def test_the_nightly_load_fetches_since_the_last_load_and_reports_a_new_day(tmp_
     monkeypatch.setattr(A, "fetch_increment", lambda since, dest, today=None: fake_fetch(since, dest, today, upto=59))
     again = L.nightly(store=s, dest_root=tmp_path / "inc")                   # the vendor has nothing new yet
     assert again["status"] == "accepted" and not again["new_day"]
+
+
+def test_a_reverse_split_with_no_action_row_counts_when_the_price_jumps_most_of_the_way(tmp_path, comps):
+    """The vendor applied a 1:16 reverse split it has no ACTIONS row for, and the price rose x8 that day."""
+    c = comps[1]
+    c["splits"] = [(25, 1 / 16)]
+    c["raw"] = c["raw"].copy(); c["raw"][25:] *= 16 * 0.5                    # x16 for the split, -50% on the day...
+    c["raw"][26:] /= 0.5                                                     # ...which reverses the next day
+    files = vendor(tmp_path, comps, 59)
+    a = pd.read_csv(files["actions"]); a[~((a.ticker == "BBB") & (a.action == "split"))].to_csv(files["actions"], index=False)
+    sp = A.normalize(A.read_files(files))["splits"].set_index("security_id")
+    assert sp.loc["102", "how"] == "factor" and sp.loc["102", "ratio"] == pytest.approx(1 / 16)
