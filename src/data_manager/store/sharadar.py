@@ -42,6 +42,7 @@ OTHER_KINDS = ("spinoff", "spinoffdividend", "spunofffrom", "adrratiosplit")
 OTHER_ALWAYS = math.log(1.02)           # an unexplained total-return step this large is kept whatever its cause
 CONFIRM_MIN = math.log(1.2)             # a factor step with no ACTIONS row is a split only if at least this large
 CONFIRM_FIT = math.log(1.5)             # and the as-printed price moves by its ratio, within this
+MIN_RESTATED = 1000                     # a restated share count below this has lost its precision (see shares)
 
 
 # --- reading the vendor's files ------------------------------------------------------------------------------------
@@ -350,10 +351,27 @@ def normalize(vendor, known_splits=None):
         fu = fu.assign(_n=n, field=np.where(use_bas, "sharesbas", "shareswa"))
         fu = fu[fu._n > 0].rename(columns={"date": "filing_date", "reportperiod": "report_period"}).reset_index(drop=True)
         Fs = later_factor(fu, out["splits"], "filing_date")
+        filed = (fu._n / Fs).to_numpy().copy()
+        field = fu.field.to_numpy().astype(object).copy()
+        # The vendor rounds its restated count to whole shares, so after many reverse splits it keeps no precision
+        # (NUWE's 2012-2020 filings restate to 0 shares). There, the vendor's own marketcap on the filing date (PIT)
+        # over the close as printed that day gives the count.
+        weak = (fu._n < MIN_RESTATED) & (fu.marketcap > 0)
+        if weak.any():
+            pos = np.searchsorted(pkey, K.key(fu.security_id[weak], fu.filing_date[weak]), side="right") - 1
+            same = (pos >= 0) & ((pkey[np.maximum(pos, 0)] // DAY) == K.code(fu.security_id[weak]))
+            close = np.where(same, px.closeunadj.to_numpy()[np.maximum(pos, 0)], np.nan)
+            alt = fu.marketcap[weak].to_numpy() / close
+            ok = np.isfinite(alt) & (alt > 0)
+            idx = np.flatnonzero(weak.to_numpy())[ok]
+            filed[idx] = alt[ok]
+            field[idx] = "marketcap/close"
+            problems.append(dict(kind="restated share count without precision: from marketcap / close", rows=int(ok.sum()),
+                                 securities=int(fu.security_id[weak][ok].nunique())))
         out["shares"] = pd.DataFrame({"security_id": fu.security_id, "filing_date": fu.filing_date,
                                       "dimension": fu.dimension, "report_period": fu.report_period,
-                                      "shares_filed": fu._n / Fs, "field": fu.field,
-                                      "_tol_shares": np.maximum(1.0, 1e-6 * fu._n / Fs)})
+                                      "shares_filed": filed, "field": field,
+                                      "_tol_shares": np.maximum(1.0, 1e-6 * filed)})
         out["_vendor_marketcap"] = pd.DataFrame({"security_id": fu.security_id, "filing_date": fu.filing_date,
                                                  "dimension": fu.dimension, "marketcap": fu.marketcap})
     out["problems"] = problems
