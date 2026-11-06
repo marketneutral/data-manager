@@ -28,6 +28,8 @@ DEFAULTS = dict(
     max_dropped_events=50,        # dropped splits, dividends, other adjustments or filings
     max_changed_old_rows=5000,    # changed price rows dated more than old_days before the data's end
     max_changed_old_securities=100,
+    max_changed_old_volume_rows=250_000,      # the vendor revises volume history routinely
+    max_changed_old_volume_securities=5000,
     old_days=30,
     max_factor_problems=250_000,  # rows whose vendor split factor disagrees with the splits
 )
@@ -115,7 +117,26 @@ def _diff_in_batches(conn, table, new, full):
     return {k: pd.concat(v, ignore_index=True) for k, v in parts.items()}
 
 
-def gate(diffs, problems, first, data_through, cfg, prices_after=None):
+def _change_kinds(old, before):
+    """Split changed old price rows into those whose prices moved and those where only volume did."""
+    if before is None or not len(old):
+        return {"old prices changed": old} if len(old) else {}
+    j = old.merge(before, on=["security_id", "date"], suffixes=("", "__b"), how="left")
+    price_cols = ["open_traded", "high_traded", "low_traded", "close_traded"]
+    moved = np.zeros(len(j), bool)
+    for c in price_cols:
+        a, b = j[c].to_numpy(float), j[c + "__b"].to_numpy(float)
+        with np.errstate(invalid="ignore"):
+            moved |= (np.isnan(a) != np.isnan(b)) | (np.abs(a - b) > 1e-3 * np.maximum(1, np.abs(b)))
+    out = {}
+    if moved.any():
+        out["old prices changed"] = old[moved]
+    if (~moved).any():
+        out["old volume revised"] = old[~moved]
+    return out
+
+
+def gate(diffs, problems, first, data_through, cfg, prices_after=None, prices_before=None):
     """The findings on a load: [{kind, severity ('hold' or 'notice'), count, detail}]."""
     out = []
 
@@ -135,12 +156,17 @@ def gate(diffs, problems, first, data_through, cfg, prices_after=None):
             dict(securities=int(px["missing"].security_id.nunique()),
                  top=px["missing"].security_id.value_counts().head(10).to_dict()))
         cutoff = (pd.Timestamp(data_through) - pd.Timedelta(days=cfg["old_days"])).strftime("%Y-%m-%d") if data_through else None
-        if cutoff:
+        if cutoff and len(px["changed"]):
             old = px["changed"][px["changed"].date < cutoff]
-            n_sec = old.security_id.nunique()
-            hold = len(old) > cfg["max_changed_old_rows"] or n_sec > cfg["max_changed_old_securities"]
-            add("old prices changed", "hold" if hold else "notice", len(old),
-                dict(securities=int(n_sec), top=old.security_id.value_counts().head(10).to_dict()))
+            cur = prices_before if prices_before is not None else None
+            kinds = _change_kinds(old, cur)
+            for kind, rows in kinds.items():
+                n_sec = rows.security_id.nunique()
+                limit_rows = cfg["max_changed_old_rows"] if kind == "old prices changed" else cfg["max_changed_old_volume_rows"]
+                limit_sec = cfg["max_changed_old_securities"] if kind == "old prices changed" else cfg["max_changed_old_volume_securities"]
+                hold = len(rows) > limit_rows or n_sec > limit_sec
+                add(kind, "hold" if hold else "notice", len(rows),
+                    dict(securities=int(n_sec), top=rows.security_id.value_counts().head(10).to_dict()))
     for t in ("splits", "dividends", "other_adjustments", "shares"):
         d = diffs.get(t)
         if d is None:
@@ -246,7 +272,14 @@ def load(files, mode="full", store=None, adapter=default_adapter, config=None, n
             sp = facts.get("splits", pd.DataFrame(columns=["security_id", "ex_date"]))
             after["split"] = k.isin(set(sp.security_id + "|" + sp.ex_date))
             prices_after = after
-    findings = gate(diffs, problems, first, data_through, cfg, prices_after)
+    before = None
+    if "prices" in diffs and len(diffs["prices"]["changed"]):
+        ch = diffs["prices"]["changed"]
+        ids_c = sorted(ch.security_id.unique())
+        before = pd.concat([read.rows(conn, "prices", where=f"security_id IN ({','.join('?' * len(part))})", params=part)
+                            for part in (ids_c[j:j + 900] for j in range(0, len(ids_c), 900))], ignore_index=True)
+        before = before.merge(ch[["security_id", "date"]], on=["security_id", "date"])
+    findings = gate(diffs, problems, first, data_through, cfg, prices_after, before)
     held = any(f["severity"] == "hold" for f in findings)
     summary = dict(counts={t: {k: len(v) for k, v in d.items()} for t, d in diffs.items()}, findings=findings,
                    data_through=data_through)

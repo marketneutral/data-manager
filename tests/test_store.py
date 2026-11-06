@@ -249,3 +249,16 @@ def test_a_one_day_glitch_in_the_vendor_s_factor_is_not_a_split(tmp_path, comps)
     px = facts["prices"].set_index(["security_id", "date"])
     assert px.loc[("103", DAYS[33]), "volume_traded"] == pytest.approx(comps[2]["vol"][33])   # still as traded
     assert px.loc[("103", DAYS[33]), "close_traded"] == pytest.approx(round(comps[2]["raw"][33], 3))
+
+
+def test_revised_volume_history_is_a_notice_and_revised_prices_are_held(tmp_path, comps):
+    s = store(tmp_path)
+    L.load(vendor(tmp_path, comps, 59, "a"), store=s, hash_files=False)
+    comps[1]["vol"][:20] *= 1.05                                           # the vendor revises BBB's early volume
+    r = L.load(vendor(tmp_path, comps, 59, "b"), store=s, hash_files=False, config=dict(max_changed_old_rows=5))
+    f = {x["kind"]: x for x in r["summary"]["findings"]}
+    assert r["status"] == "accepted" and f["old volume revised"]["count"] == 20 and f["old volume revised"]["severity"] == "notice"
+    conn = connect(s, readonly=True)
+    v = R.rows(conn, "prices").set_index(["security_id", "date"]).loc[("102", DAYS[0]), "volume_traded"]
+    assert v == pytest.approx(comps[1]["vol"][0])                          # the revision is current
+    assert len(conn.execute("select * from prices where superseded_in is not null").fetchall()) == 20   # the old kept

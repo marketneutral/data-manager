@@ -286,7 +286,8 @@ def normalize(vendor, known_splits=None):
         "security_id": px.security_id, "date": px.date,
         "open_traded": px.open * F, "high_traded": px.high * F, "low_traded": px.low * F,
         "close_traded": px.closeunadj, "volume_traded": px.volume / F,
-        "_tol_price": HALF_TICK * F + 1e-9, "_tol_volume": np.maximum(1.0, 1e-6 * (px.volume / F).abs()),
+        "_tol_price": 2 * HALF_TICK * F + 1e-9,     # both the stored and the new value are rounded
+        "_tol_volume": np.maximum(1.0, 1e-6 * (px.volume / F).abs()),
         "_F": F,
     })
     out["prices"] = prices
