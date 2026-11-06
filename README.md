@@ -124,7 +124,9 @@ definitions are written into the `descriptions` table by the loader.
 date, open, high, low, close, volume — **raw as-traded** prices; `adjustment` =
 per-day factor (splits + dividends). **Adjust at query time:**
 `adjusted_prices(ticker, start, end)` returns `adjusted_open/high/low/close =
-raw × adjustment`. Volume stays as traded.
+raw × adjustment`.
+
+**Correction (2026-11-06): `prices.volume` is the vendor's split-adjusted volume, not as traded.** It is expressed in the share units after every later split (fractions of a share appear), and the loader truncates it with `int()`. As traded = volume ÷ (the vendor's `closeunadj / close` on that row); dividing gives whole shares on 97% of rows before a later split. Dollar volume from `close × volume` is wrong before every split. The store (`data_manager.store`, `warehouse.db`) keeps volume as traded.
 
 ### `classifications` (PK: ticker)
 sector (mapped to 11 GICS labels; unmapped -> NULL = fails closed for the stock-factor inclusion filter), industry, as_of.
@@ -231,7 +233,7 @@ uv run data-manager bulk-update      [--tables a,b] [--force]  # manifest-skippe
 
 Tables: tickers, stocks (46.3M rows full, 1998->), funds, actions (673k),
 metrics (with history to 1997), sp500, fundamentals (6 dims incl. TTM ART/MRT,
-1990->). Bulk semantics verified: price volume is as-traded; OHLC split-adjusted
+1990->). Bulk semantics verified: OHLC split-adjusted, and so is volume (corrected 2026-11-06: it is not as-traded)
 (closeunadj = as-traded close); SF1 report date is `datekey`.
 
 Ken French factors are a separate source (not a Sharadar bulk zip): the five

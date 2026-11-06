@@ -265,6 +265,9 @@ Verified bulk-file facts:
 - funds bulk full = 15,473,734 rows; fundamentals bulk = 3,212,940 rows,
   SIX dimensions ARY/MRY/ARQ/MRQ + ART/MRT (TTM), datekey=report date, 1990->
 - bulk price volume is AS-TRADED (FAQ text says split-adjusted - trust the file)
+  **WRONG — corrected 2026-11-06:** volume is split-adjusted, as the FAQ says. Evidence: across
+  7,860 splits it does not jump by the ratio; 6.8% of values are fractions of a share; volume ÷
+  (closeunadj/close) is whole shares on 97% of pre-split rows against 73% undivided.
 
 GOTCHA (2026-08-11): a hand-written /tmp loader script had a template bug
 (`'funds' == 'funds' and DELETE FROM prices`) that wiped the stocks rows after

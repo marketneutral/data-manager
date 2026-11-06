@@ -1,3 +1,4 @@
+import os
 """Command-line interface for the data-manager."""
 
 import argparse
@@ -145,7 +146,39 @@ def main(argv=None):
     p_bu.add_argument("--no-pit", action="store_true")
     p_bu.add_argument("--db", default=None)
 
+    p_sl = sub.add_parser("store-load", help="Load vendor files into the store (warehouse.db): convert, compare, gate, commit.")
+    p_sl.add_argument("--dir", default=None, help="bulk zip directory for a full load (default ~/.prime/agent/bulk)")
+    p_sl.add_argument("--file", action="append", default=[], help="name=path for a vendor file (stocks, funds, tickers, actions, fundamentals)")
+    p_sl.add_argument("--increment", action="store_true", help="the files carry only what changed (a nightly load)")
+    p_sl.add_argument("--store", default=None)
+    p_sl.add_argument("--note", default=None)
+    p_ss = sub.add_parser("store-status", help="The store's loads and current row counts.")
+    p_ss.add_argument("--store", default=None)
+    p_sa = sub.add_parser("store-accept", help="Commit a quarantined load after review.")
+    p_sa.add_argument("load_id", type=int)
+    p_sa.add_argument("--by", required=True)
+    p_sa.add_argument("--note", default=None)
+    p_sa.add_argument("--store", default=None)
+    p_sr = sub.add_parser("store-reject", help="Reject a quarantined load.")
+    p_sr.add_argument("load_id", type=int)
+    p_sr.add_argument("--by", required=True)
+    p_sr.add_argument("--note", default=None)
+    p_sr.add_argument("--store", default=None)
+
+    p_ep = sub.add_parser("export-panel", help="Build a versioned panel (parquet + panel.json) from the store.")
+    p_ep.add_argument("--out", default=os.path.expanduser("~/data/panels"))
+    p_ep.add_argument("--store", default=None)
+    p_ep.add_argument("--load", type=int, default=None, help="build as of this load (default: the last accepted)")
+    p_ep.add_argument("--end", default=None, help="last date to include (YYYY-MM-DD)")
+
     args = parser.parse_args(argv)
+    if args.command == "export-panel":
+        from . import panel as P
+        folder, m = P.build(args.out, store=args.store, at=args.load, end=args.end)
+        print(f"panel {m['version']}: {m['n_tickers']:,} stocks x {m['n_dates']:,} days, {m['start']} to {m['end']}, from load {m['store']['load_id']} -> {folder}")
+        return 0
+    if args.command.startswith("store-"):
+        return _store_command(args)
     conn = db.connect(args.db)
 
     if args.command == "status":
@@ -317,6 +350,37 @@ def main(argv=None):
                 print("[pit-audit] ERROR: a point-in-time invariant failed; see pit_audit_runs")
                 return 1
     return 0
+
+
+def _store_command(args):
+    """The store's commands; they never open the legacy data_manager.db."""
+    from .store import load as SL, read as SR, sharadar as SA
+    from .store.schema import connect as store_connect
+    if args.command == "store-load":
+        files = SA.bulk_files(args.dir or os.path.expanduser("~/.prime/agent/bulk")) if not args.file else {}
+        files.update(dict(f.split("=", 1) for f in args.file))
+        r = SL.load(files, mode="increment" if args.increment else "full", store=args.store, note=args.note)
+        print(json.dumps(dict(load_id=r["load_id"], status=r["status"], counts=r["summary"]["counts"],
+                              findings=r["summary"]["findings"], audit=r["summary"].get("audit")), indent=1, default=str))
+        return 0 if r["status"] == "accepted" else 2
+    if args.command == "store-status":
+        conn = store_connect(args.store, readonly=True)
+        for r in SR.loads(conn).itertuples():
+            print(f"load {r.load_id}: {r.status:11s} {r.mode:9s} through {r.data_through}  started {r.started_at}"
+                  + (f"  reviewed by {r.reviewed_by}" if r.reviewed_by else ""))
+        for t in ("securities", "prices", "splits", "dividends", "other_adjustments", "shares"):
+            n = conn.execute(f"SELECT count(*) FROM {t} WHERE superseded_in IS NULL").fetchone()[0]
+            m = conn.execute(f"SELECT count(*) FROM {t} WHERE superseded_in IS NOT NULL").fetchone()[0]
+            print(f"  {t:18s} current {n:>12,}   superseded {m:>10,}")
+        return 0
+    if args.command == "store-accept":
+        r = SL.accept(args.load_id, args.by, store=args.store, note=args.note)
+        print(json.dumps(dict(load_id=r["load_id"], status=r["status"], counts=r["summary"].get("accepted_counts")), default=str))
+        return 0
+    if args.command == "store-reject":
+        SL.reject(args.load_id, args.by, store=args.store, note=args.note)
+        print(f"load {args.load_id} rejected")
+        return 0
 
 
 if __name__ == "__main__":

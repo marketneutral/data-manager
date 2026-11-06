@@ -126,8 +126,8 @@ WHERE table_name = 'SF1' AND indicator = 'revenue';
 * `close` is the **as-traded** price (it gaps at stock splits).
 * `adjustment = closeadj / close(t)` where `closeadj` is the vendor's
   total-return-adjusted close, normalized so `adjustment = 1.0` on the
-  latest quote. Apply `adjusted = raw × adjustment` for any OHLC field
-  (volume stays as traded).
+  latest quote. Apply `adjusted = raw × adjustment` for any OHLC field.
+* **Correction (2026-11-06): `prices.volume` is the vendor's split-adjusted volume, not as traded.** It is expressed in the share units after every later split (fractions of a share appear), and the loader truncates it with `int()`. As traded = volume ÷ (the vendor's `closeunadj / close` on that row); dividing gives whole shares on 97% of rows before a later split. Dollar volume from `close × volume` is wrong before every split. The store (`data_manager.store`, `warehouse.db`) keeps volume as traded.
 * **Construction (verified 2026-08-12):** adjustment is a *cumulative,
   multiplicative* chain — one factor per corporate action after the day
   (split `s:1` → `1/s`; cash dividend `d` on ex-date → `≈ 1 - d/c`), all
@@ -354,7 +354,8 @@ fact from its knowledge date onward.
 
 | table | known on | levels are in | safe | not safe → remedy |
 |---|---|---|---|---|
-| `prices.close/open/high/low/volume` | `date` (as-traded) | that day's units | levels, $ thresholds, dollar volume | — |
+| `prices.close/open/high/low` | `date` (as-traded) | that day's units | levels, $ thresholds | — |
+| `prices.volume` | `date` | **latest share units** (split-adjusted by the vendor; truncated by the loader) | counting days with trades | dollar volume, $ liquidity screens → volume ÷ (`closeunadj/close`), or the store's `volume_traded` |
 | `prices.adjustment` | `date` | latest units (folds in every later split/dividend) | return ratios | levels as of D → rebase `adj(t)/adj(D)` (§Prices) |
 | `sf1` ARQ/ARY/ART | `date` = SEC filing date (98.8% exactly EDGAR's; 0.09% earlier) | **dollar totals: as filed. Per-share fields and share counts: latest share units** | dollar totals; ratios between fields; `marketcap`, `pe`, `pb`, `ps` (vendor-computed at `date`) | per-share/share-count **levels** (`price`, `eps`, `epsdil`, `epsusd`, `bvps`, `dps`, `sps`, `fcfps`, `tbvps`, `sharesbas`, `shareswa`, `shareswadil`) → `pit_fundamentals(split_basis=True)` |
 | `sf1` AR values | | the **original** filing's (99.9%; 99.3% of later-restated periods keep the original, 0.0% the restatement) | as-of use with `date <= D` | — |
