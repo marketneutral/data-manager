@@ -367,7 +367,7 @@ def _store_command(args):
         conn = store_connect(args.store, readonly=True)
         for r in SR.loads(conn).itertuples():
             print(f"load {r.load_id}: {r.status:11s} {r.mode:9s} through {r.data_through}  started {r.started_at}"
-                  + (f"  reviewed by {r.reviewed_by}" if r.reviewed_by else ""))
+                  + (f"  reviewed by {r.reviewed_by}" if isinstance(r.reviewed_by, str) and r.reviewed_by else ""))
         for t in ("securities", "prices", "splits", "dividends", "other_adjustments", "shares"):
             n = conn.execute(f"SELECT count(*) FROM {t} WHERE superseded_in IS NULL").fetchone()[0]
             m = conn.execute(f"SELECT count(*) FROM {t} WHERE superseded_in IS NOT NULL").fetchone()[0]
