@@ -69,6 +69,37 @@ permaticker)` — **join master on `ticker`, not `permaticker`**.
 | snapshots | ledger | id | per-pull record (source, pulled_at, as_of, row_count) |
 | descriptions | raw (bulk) | (table_name, indicator) | Sharadar's field dictionary: title + sentence-level definition + unit type for every column of every vendor table (373 rows, 17 datasets) |
 
+## The store (`warehouse.db`): the warehouse for a nightly load
+
+A second database, `~/.prime/agent/warehouse.db` (`DATA_MANAGER_STORE`), built by `data_manager.store`. It is the
+foundation for research data: `data-manager export-panel` builds panels from it. `data_manager.db` is untouched by it.
+
+**Each fact once, in units later events don't change.** `prices` (open/high/low/close and volume *as traded*,
+volume exact), `splits` (the splits the vendor applied, found from its own split factor; exact ratios from ACTIONS),
+`dividends` (amount per share in that day's units), `other_adjustments` (spinoffs and other total-return steps,
+with the vendor's factor), `shares` (as filed: count in the filing date's units, by filing date), `securities`
+(ticker, labels and dates per version). A later split adds a `splits` row and changes no `prices` row.
+
+**Keys and history.** Securities are keyed by `security_id` (Sharadar's permaticker), never by ticker. Nothing is
+deleted: every row has `added_in` and `superseded_in` (NULL while current) load ids. Current rows:
+`WHERE superseded_in IS NULL`; as of load L: `added_in <= L AND (superseded_in IS NULL OR superseded_in > L)`
+(`store.read.rows(conn, table, at=L)`). `loads` records each load's files (sha256), counts, findings and status.
+
+**Loads.** `data-manager store-load` (full, from the bulk zips) or `--increment --file stocks=...` (only what
+changed). Convert (`store/sharadar.py`, the only module naming Sharadar columns) → compare within the vendor's 3-decimal
+rounding (a mechanical rewrite changes nothing) → gate → commit → audit. The gate holds back (status
+`quarantined`, staged on disk, nothing changed) a load that drops price history, changes many old prices, or whose
+split factors disagree widely; `store-accept ID --by NAME` commits it after review, `store-reject` discards it.
+
+**Adjusted prices are computed when read** (`store.read.adjusted(prices, splits, dividends, other, as_of=D)`): as
+traded × the events after each day up to D. Total returns; nothing after D is used. The vendor's own `closeadj` is
+rounded to 3 decimals, which puts up to ±1% of noise in daily returns where the adjusted level is small (NVDA
+2002–2004); this one is computed from the as-traded close and exact events.
+
+**Audit (every load).** Volume whole shares on pre-split rows; our total-return step against the vendor's within
+rounding; splits with an ACTIONS ratio; price × shares against the vendor's marketcap on filing dates; no price row
+outside the vendor's first/last price dates.
+
 ## The data dictionary is IN the database — read `descriptions`
 
 Never guess what a column means. Every column definition is stored in the

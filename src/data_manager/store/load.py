@@ -93,6 +93,28 @@ def _scope(conn, table, new, full):
     return pd.concat(parts, ignore_index=True)
 
 
+BATCH_ROWS = int(__import__("os").environ.get("DATA_MANAGER_STORE_BATCH_ROWS", 2_000_000))          # a table this large is compared a batch of securities at a time
+BATCH_SECURITIES = 1500
+
+
+def _diff_in_batches(conn, table, new, full):
+    """diff() a batch of securities at a time, so a full load never holds two copies of every row at once."""
+    stored = [r[0] for r in conn.execute(f"SELECT DISTINCT security_id FROM {table} WHERE superseded_in IS NULL")]
+    ids = sorted(set(new.security_id.unique()) | (set(stored) if full else set()))
+    by = new.groupby("security_id", sort=False).indices
+    parts = {k: [] for k in ("added", "changed", "missing")}
+    for i in range(0, len(ids), BATCH_SECURITIES):
+        batch = ids[i:i + BATCH_SECURITIES]
+        idx = [by[b] for b in batch if b in by]
+        nb = new.iloc[np.concatenate(idx)] if idx else new.iloc[:0]
+        cur = pd.concat([read.rows(conn, table, where=f"security_id IN ({','.join('?' * len(part))})", params=part)
+                         for part in (batch[j:j + 900] for j in range(0, len(batch), 900))], ignore_index=True)
+        d = diff(table, nb, cur, full)
+        for k in parts:
+            parts[k].append(d[k])
+    return {k: pd.concat(v, ignore_index=True) for k, v in parts.items()}
+
+
 def gate(diffs, problems, first, data_through, cfg, prices_after=None):
     """The findings on a load: [{kind, severity ('hold' or 'notice'), count, detail}]."""
     out = []
@@ -202,7 +224,8 @@ def load(files, mode="full", store=None, adapter=default_adapter, config=None, n
     diffs = {}
     for t in TABLES:
         if t in facts:
-            diffs[t] = diff(t, facts[t], _scope(conn, t, facts[t], full), full)
+            diffs[t] = (_diff_in_batches(conn, t, facts[t], full) if len(facts[t]) > BATCH_ROWS
+                        else diff(t, facts[t], _scope(conn, t, facts[t], full), full))
             _say(f"compared {t}: " + ", ".join(f"{k} {len(v):,}" for k, v in diffs[t].items()))
     prices_after = None
     if "prices" in diffs and not first:
@@ -210,7 +233,12 @@ def load(files, mode="full", store=None, adapter=default_adapter, config=None, n
         touched = pd.concat([p["added"], p["changed"]])
         if len(touched):
             ids = touched.security_id.unique()
-            after = pd.concat([_scope(conn, "prices", touched, False)[["security_id", "date", "close_traded"]],
+            since = (pd.Timestamp(touched.date.min()) - pd.Timedelta(days=15)).strftime("%Y-%m-%d")
+            ids_l = sorted(ids)
+            prev = pd.concat([read.rows(conn, "prices", where=f"date >= ? AND security_id IN ({','.join('?' * len(part))})",
+                                        params=[since] + part, columns=["security_id", "date", "close_traded"])
+                              for part in (ids_l[j:j + 900] for j in range(0, len(ids_l), 900))], ignore_index=True)
+            after = pd.concat([prev[["security_id", "date", "close_traded"]],
                                touched[["security_id", "date", "close_traded"]]]).drop_duplicates(["security_id", "date"], keep="last")
             after = after[after.security_id.isin(ids)].sort_values(["security_id", "date"]).reset_index(drop=True)
             k = after.security_id + "|" + after.date
