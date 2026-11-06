@@ -144,7 +144,8 @@ def detect_splits(px, actions=None):
     px: vendor rows with security_id, date, close, closeunadj, sorted by security and date.
     A step counts when it is larger than four times its rounding and than 0.5%. Its ratio is the ACTIONS split value
     within 10 days that fits it (how='action'). With no such row it is a split only if it is 20% or more and the
-    as-printed price moves by its ratio (within 1.5x) that day (how='factor'); otherwise it is the vendor's glitch (a
+    as-printed price moves by its ratio (within 1.5x) that day, or the same way by at least half of it in log terms
+    (a 1:16 reverse split on a day the price is x8.7) (how='factor'); otherwise it is the vendor's glitch (a
     day its split-adjusted series was mis-scaled), reported, and its rows keep the vendor's own factor."""
     px = px[(px.close > 0) & (px.closeunadj > 0)]
     f, tol = _factor(px)
@@ -171,7 +172,10 @@ def detect_splits(px, actions=None):
             if v > 0 and abs((ad - day).days) <= 10 and abs(math.log(v / s)) <= max(4 * nz, 0.01):
                 if best is None or abs(math.log(v / s)) < abs(math.log(best / s)):
                     best, how = v, "action"
-        if best is None and not (abs(math.log(s)) >= CONFIRM_MIN and abs(mv + math.log(s)) < CONFIRM_FIT):
+        confirmed = abs(math.log(s)) >= CONFIRM_MIN and (
+            abs(mv + math.log(s)) < CONFIRM_FIT                       # the price moves by the ratio
+            or (mv * -math.log(s) > 0 and abs(mv) >= 0.5 * abs(math.log(s))))  # or the same way by half of it (in logs)
+        if best is None and not confirmed:
             unconfirmed.append((sid, d, s))   # no ACTIONS row and the price does not move by it: a vendor glitch
             continue
         out.append((sid, d, best if best is not None else _nice(s, 4 * nz), how))
@@ -354,3 +358,90 @@ def normalize(vendor, known_splits=None):
                                                  "dimension": fu.dimension, "marketcap": fu.marketcap})
     out["problems"] = problems
     return out
+
+
+# --- the nightly increment: what the vendor changed since a date ---------------------------------------------------
+
+API = "https://api.sharadar.com/v1.0/data/{table}"
+LIMIT = 100_000                         # the API's most rows per request
+INCREMENT_TABLES = {                    # our name -> (vendor table, filter on, its date column for splitting)
+    "stocks": ("SEP", "lastupdated", "date"), "funds": ("SFP", "lastupdated", "date"),
+    "fundamentals": ("SF1", "lastupdated", "date"), "actions": ("ACTIONS", "date", "date"),
+}
+ACTIONS_LOOKBACK_DAYS = 60              # actions carry no lastupdated: take the recent ones
+
+
+def _api_get(table, params, retries=6):
+    import csv, io, time, urllib.error, urllib.request
+    from ..bulk import _key
+    url = API.format(table=table) + f"?api_key={_key()}&format=csv" + "".join(f"&{k}={v}" for k, v in params.items())
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "data-manager/store"}), timeout=300) as r:
+                return list(csv.reader(io.StringIO(r.read().decode())))
+        except urllib.error.HTTPError as e:
+            if e.code == 429 or e.code >= 500:
+                time.sleep(max(5, int(e.headers.get("Retry-After", "15"))))
+                continue
+            raise RuntimeError(f"{table}: HTTP {e.code} {e.read()[:200]!r}") from None
+        except Exception:
+            time.sleep(5 * (attempt + 1))
+    raise RuntimeError(f"{table}: no answer after {retries} tries")
+
+
+def _fetch_window(table, params, date_col, lo, hi, out, depth=0):
+    """Every row matching params with lo <= date_col <= hi, splitting the window until each request is under the
+    API's limit (so nothing depends on the vendor's row order).
+
+    The API silently returns too few rows for a window longer than about a year (measured 2026-11-06: rows of SEP
+    updated since 11-05, one request for 1997-2026 gave 19,292 against 153,247 a year at a time, and a year agreed
+    with the sum of its months), so callers keep each window within a calendar year."""
+    rows = _api_get(table, dict(params, **{f"{date_col}.gte": lo, f"{date_col}.lte": hi, "limit": LIMIT}))
+    header, body = rows[0] if rows else [], rows[1:]
+    if len(body) < LIMIT:
+        out.extend(body)
+        return header
+    a, b = pd.Timestamp(lo), pd.Timestamp(hi)
+    if a >= b:                                       # one day with as many rows as the limit: page within it
+        k = 0
+        while True:
+            page = _api_get(table, dict(params, **{f"{date_col}.gte": lo, f"{date_col}.lte": hi, "limit": LIMIT, "offset": k}))[1:]
+            out.extend(page)
+            if len(page) < LIMIT:
+                return header
+            k += LIMIT
+    mid = a + (b - a) / 2
+    left_hi, right_lo = mid.strftime("%Y-%m-%d"), (mid + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
+    _fetch_window(table, params, date_col, lo, left_hi, out, depth + 1)
+    return _fetch_window(table, params, date_col, right_lo, hi, out, depth + 1)
+
+
+def fetch_increment(since, dest, today=None):
+    """Download what the vendor changed since `since` (a date) into dest/: stocks, funds and fundamentals updated on
+    or after it, actions from ACTIONS_LOOKBACK_DAYS before it, and the whole tickers table. Returns {name: path}."""
+    import csv
+    dest = Path(dest).expanduser()
+    dest.mkdir(parents=True, exist_ok=True)
+    today = today or pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d")
+    files = {}
+    for name, (table, filt, date_col) in INCREMENT_TABLES.items():
+        start = since if filt != "date" else (pd.Timestamp(since) - pd.Timedelta(days=ACTIONS_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+        params = {f"{filt}.gte": start} if filt != date_col else {}
+        lo = "1990-01-01" if filt != date_col else start
+        out, header = [], []
+        for y in range(int(lo[:4]), int(today[:4]) + 1):       # one calendar year at most per request (see below)
+            a, b = max(lo, f"{y}-01-01"), min(today, f"{y}-12-31")
+            header = _fetch_window(table, params, date_col, a, b, out) or header
+        path = dest / f"{name}.csv"
+        with open(path, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(header)
+            w.writerows(out)
+        files[name] = str(path)
+    rows = _api_get("TICKERS", {"limit": LIMIT})
+    if len(rows) - 1 >= LIMIT:
+        raise RuntimeError("the tickers table reached the API's limit: fetch it in pieces")
+    with open(dest / "tickers.csv", "w", newline="") as f:
+        csv.writer(f).writerows(rows)
+    files["tickers"] = str(dest / "tickers.csv")
+    return files

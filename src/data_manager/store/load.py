@@ -337,3 +337,26 @@ def reject(load_id, reviewed_by, store=None, note=None):
                  (reviewed_by, note, load_id))
     conn.commit()
     shutil.rmtree(_stage_dir(store, load_id), ignore_errors=True)
+
+
+def nightly(store=None, dest_root=None, adapter=default_adapter, overlap_days=1, config=None, today=None):
+    """The nightly load: fetch what the vendor changed since the last accepted load (with a day's overlap) into a
+    dated folder (kept: the vendor's files for that night), load it as an increment, and say whether a new trading day
+    arrived. Returns the load's record plus 'new_day' (bool) and 'folder'."""
+    from . import DEFAULT_STORE
+    store = store or DEFAULT_STORE
+    conn = connect(store)
+    last = conn.execute("SELECT max(load_id), max(data_through) FROM loads WHERE status='accepted'").fetchone()
+    if last[0] is None:
+        raise ValueError("the store has no accepted load: run a full load first (data-manager store-load)")
+    started = conn.execute("SELECT started_at FROM loads WHERE load_id=?", (last[0],)).fetchone()[0]
+    since = (pd.Timestamp(started[:10]) - pd.Timedelta(days=overlap_days)).strftime("%Y-%m-%d")
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H%M")
+    folder = Path(dest_root or Path(store).expanduser().parent / "increments") / stamp
+    _say(f"fetching what {adapter.SOURCE} changed since {since} into {folder}")
+    files = adapter.fetch_increment(since, folder, today=today)
+    r = load(files, mode="increment", store=store, adapter=adapter, config=config,
+             note=f"nightly: changes since {since}", hash_files=True)
+    through = r["summary"].get("data_through")
+    r.update(new_day=bool(through and last[1] and through > last[1]), previous_through=last[1], folder=str(folder))
+    return r
