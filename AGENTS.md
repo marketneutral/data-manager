@@ -91,6 +91,28 @@ rounding (a mechanical rewrite changes nothing) → gate → commit → audit. T
 `quarantined`, staged on disk, nothing changed) a load that drops price history, changes many old prices, or whose
 split factors disagree widely; `store-accept ID --by NAME` commits it after review, `store-reject` discards it.
 
+**Nightly increments** (`data-manager store-nightly`, `store.load.nightly`). Fetches SEP, SFP and SF1 rows with
+`lastupdated` on or after the day before the last accepted load, ACTIONS from 60 days before, and the whole TICKERS
+table, through `api.sharadar.com/v1.0/data/<table>` (`limit` at most 100,000 a request; `offset` pages). **The API
+silently returns too few rows for a date window longer than about a year** (2026-11-06: one request for 1997-2026
+gave 19,292 rows, a year at a time 153,247; a year agreed with the sum of its months), so every request stays within
+a calendar year and is halved while it returns the limit. Verified: an increment since 2026-10-24 equals the 11-06
+bulk file cut to rows updated since then. An increment cannot see history the vendor *dropped*: run a full load from
+the bulk zips now and then.
+
+**What the vendor rewrites.** A new split or dividend rescales the vendor's adjusted fields for every earlier day
+(86% of rewritten rows); the store's as-traded forms don't change, so these compare as unchanged. Real revisions seen
+between the 10-24 and 11-06 files: volume on 86,452 old rows (routine: the gate notes, doesn't hold), 100 old price
+rows, history dropped for FMAO (pre-2017, pre-listing) and IGLDF, 196 filings dropped (only VMC was a universe member
+on the days they affected).
+
+**Splits are the ones the vendor applied**, from the steps in its per-row split factor `closeunadj / close`, with the
+exact ratio from an ACTIONS split row within 10 days. A step with no ACTIONS row counts only if the as-printed price
+confirms it (moves by the ratio within 1.5x, or the same way by at least half of it in logs); otherwise it is a glitch
+in the vendor's split-adjusted series (found: one-day x2/x0.5 pairs in ETFs in 2014, CRRSQ) and is reported, not
+stored. Rows whose vendor factor disagrees with the splits (about 44,000, 46 securities, all penny stocks or ETFs)
+are converted with the vendor's own factor, which is exact for as-traded values.
+
 **Adjusted prices are computed when read** (`store.read.adjusted(prices, splits, dividends, other, as_of=D)`): as
 traded × the events after each day up to D. Total returns; nothing after D is used. The vendor's own `closeadj` is
 rounded to 3 decimals, which puts up to ±1% of noise in daily returns where the adjusted level is small (NVDA

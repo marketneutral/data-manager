@@ -170,6 +170,56 @@ Provenance: source, pulled_at, as_of, row_count for each universe pull.
 
 ---
 
+## The store and panels (research data, nightly loads)
+
+Research data comes from a second database, the **store** (`~/.prime/agent/warehouse.db`, `DATA_MANAGER_STORE`),
+and the **panels** built from it. `data_manager.db` above is not changed by any of this.
+
+**What the store keeps.** Each fact once, in units later events don't change: prices and volume *as traded*
+(volume exact), splits, dividends and other adjustments (spinoffs) as events, shares outstanding *as filed*, and the
+securities (labels, ticker) keyed by permaticker. Nothing is deleted: every row records the load that added it and the
+load that superseded it, and `loads` records each load's vendor files (sha256), counts, findings and who accepted it.
+Adjusted prices are computed when read, as of any date (`data_manager.store.read.adjusted`). The contract and the
+vendor's quirks are in AGENTS.md, *The store*.
+
+**Refreshing the data, by hand** (nothing is scheduled):
+
+```bash
+data-manager store-nightly        # fetch what the vendor changed since the last load; load it as an increment
+                                  # exit 0: a new trading day; 2: the gate held it back; 3: nothing new yet
+data-manager store-status         # the loads and current row counts
+data-manager export-panel         # a new panel folder in ~/data/panels/<version>, with panel.json
+```
+
+**A full reconciliation** (now and then: it compares every row the vendor has with the store, so it also finds
+history the vendor dropped or rewrote, which an increment cannot see):
+
+```bash
+data-manager bulk-download stocks --dir ~/.prime/agent/bulk/$(date +%F)    # and tickers, funds, actions, fundamentals
+data-manager store-load --dir ~/.prime/agent/bulk/$(date +%F)
+```
+
+**When the gate holds a load back** (status `quarantined`): nothing in the store changed, and the converted rows are
+staged on disk. `store-load` printed the findings (dropped price history, many old prices changed, dropped filings);
+look at them, then `data-manager store-accept <id> --by <you> --note "..."` or `store-reject <id> --by <you>`. Routine
+volume revisions are notices, not holds.
+
+**Where things are.** The store `~/.prime/agent/warehouse.db`; the vendor's bulk files, one folder per download
+(`~/.prime/agent/bulk/`, `.../bulk/<date>/`); each nightly increment's files `~/.prime/agent/increments/<stamp>/`;
+held-back loads `~/.prime/agent/warehouse_staged/<id>/`; panels `~/data/panels/<version>/`.
+
+**The panel's fields** (declared in each `panel.json`):
+
+| field | what it is | adjustment exponent |
+|---|---|---|
+| `open` `high` `low` `close` | total-return adjusted prices, as of the panel's last day: for returns | +1 |
+| `volume` | shares traded ÷ the adjustment: smooth across splits | −1 |
+| `price` | the close as printed, on every quoted session | 0 |
+| `volume_traded` | shares traded as printed (0 on a quoted day with no trades) | 0 |
+| `shares` | shares outstanding in that day's units, from the latest filing (by filing date) and the splits since | 0 |
+| `market` | SPY, total-return adjusted | +1 |
+| `sector` `industry` `category` `exchange` `famaindustry` | the vendor's current labels, the same on every day | – |
+
 ## CLI reference
 
 ```
@@ -188,6 +238,14 @@ data-manager build-shares-pit                          derive split_events and s
 data-manager pit-audit [--no-record]                   point-in-time invariants on the live warehouse; exit 1 on error
 data-manager build-universe-pit --history              rebuild universe_pit for every trading day
 data-manager enrich-cik | enrich-figi | enrich-sic     legacy SEC/OpenFigi enrichment
+
+# the store (warehouse.db) and panels: see "The store and panels"
+data-manager store-nightly [--store P] [--dest D]      fetch the vendor's changes since the last load, load them (exit 0/2/3)
+data-manager store-load [--dir BULK] [--file name=path ...] [--increment] [--note T]   load vendor files
+data-manager store-status [--store P]                  loads and current row counts
+data-manager store-accept ID --by NAME [--note T]      commit a load the gate held back, after review
+data-manager store-reject ID --by NAME [--note T]      discard it
+data-manager export-panel [--out DIR] [--load ID] [--end DATE]   a new versioned panel from the store
 ```
 
 ---
