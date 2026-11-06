@@ -232,3 +232,20 @@ def test_an_increment_with_a_new_split_re_sends_history_and_changes_nothing_old(
     assert len(sp) == 3 and sp.loc["103", "ratio"] == 4.0 and sp.loc["103", "ex_date"] == DAYS[59]
     on = R.rows(conn, "prices").set_index(["security_id", "date"])
     assert on.loc[("103", DAYS[58]), "volume_traded"] == pytest.approx(comps[2]["vol"][58])   # still as traded
+
+
+def test_a_one_day_glitch_in_the_vendor_s_factor_is_not_a_split(tmp_path, comps):
+    """The vendor's split-adjusted close is mis-scaled for one day (x2 then back): no split, the prices are right."""
+    files = vendor(tmp_path, comps, 59)
+    st = pd.read_csv(files["stocks"])
+    row = (st.ticker == "CCC") & (st.date == DAYS[33])
+    for c in ("open", "high", "low", "close"):
+        st.loc[row, c] = st.loc[row, c] / 2                    # the vendor's split-adjusted values halve for a day
+    st.loc[row, "volume"] *= 2
+    st.to_csv(files["stocks"], index=False)
+    facts = A.normalize(A.read_files(files))
+    assert "103" not in set(facts["splits"].security_id)
+    assert any(p["kind"] == "factor step that is not a split" for p in facts["problems"])
+    px = facts["prices"].set_index(["security_id", "date"])
+    assert px.loc[("103", DAYS[33]), "volume_traded"] == pytest.approx(comps[2]["vol"][33])   # still as traded
+    assert px.loc[("103", DAYS[33]), "close_traded"] == pytest.approx(round(comps[2]["raw"][33], 3))

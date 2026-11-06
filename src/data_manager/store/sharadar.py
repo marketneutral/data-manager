@@ -40,6 +40,8 @@ HALF_TICK = 0.0005                      # the vendor rounds prices to 3 decimals
 SPLIT_MIN = math.log(1.005)             # a factor step smaller than this is never a split
 OTHER_KINDS = ("spinoff", "spinoffdividend", "spunofffrom", "adrratiosplit")
 OTHER_ALWAYS = math.log(1.02)           # an unexplained total-return step this large is kept whatever its cause
+CONFIRM_MIN = math.log(1.2)             # a factor step with no ACTIONS row is a split only if at least this large
+CONFIRM_FIT = math.log(1.5)             # and the as-printed price moves by its ratio, within this
 
 
 # --- reading the vendor's files ------------------------------------------------------------------------------------
@@ -141,7 +143,9 @@ def detect_splits(px, actions=None):
 
     px: vendor rows with security_id, date, close, closeunadj, sorted by security and date.
     A step counts when it is larger than four times its rounding and than 0.5%. Its ratio is the ACTIONS split value
-    within 10 days that fits it (how='action'), else the simplest fraction that fits (how='factor')."""
+    within 10 days that fits it (how='action'). With no such row it is a split only if it is 20% or more and the
+    as-printed price moves by its ratio (within 1.5x) that day (how='factor'); otherwise it is the vendor's glitch (a
+    day its split-adjusted series was mis-scaled), reported, and its rows keep the vendor's own factor."""
     px = px[(px.close > 0) & (px.closeunadj > 0)]
     f, tol = _factor(px)
     sid = px["_code"] if "_code" in px else px.security_id
@@ -158,16 +162,22 @@ def detect_splits(px, actions=None):
         a = actions[actions.action == "split"]
         for sid, g in a.groupby("security_id"):
             acts[sid] = list(zip(pd.to_datetime(g.date), g.value.astype(float)))
-    out = []
-    for sid, d, s, nz in cand.itertuples(index=False):
+    move = np.log(px.closeunadj / px.closeunadj.shift())[hit].to_numpy()       # the as-printed price's move that day
+    out, unconfirmed = [], []
+    for (sid, d, s, nz), mv in zip(cand.itertuples(index=False), move):
         best, how = None, "factor"
         day = pd.Timestamp(d)
         for ad, v in acts.get(sid, ()):
             if v > 0 and abs((ad - day).days) <= 10 and abs(math.log(v / s)) <= max(4 * nz, 0.01):
                 if best is None or abs(math.log(v / s)) < abs(math.log(best / s)):
                     best, how = v, "action"
+        if best is None and not (abs(math.log(s)) >= CONFIRM_MIN and abs(mv + math.log(s)) < CONFIRM_FIT):
+            unconfirmed.append((sid, d, s))   # no ACTIONS row and the price does not move by it: a vendor glitch
+            continue
         out.append((sid, d, best if best is not None else _nice(s, 4 * nz), how))
-    return pd.DataFrame(out, columns=["security_id", "ex_date", "ratio", "how"])
+    found = pd.DataFrame(out, columns=["security_id", "ex_date", "ratio", "how"])
+    found.attrs["unconfirmed"] = unconfirmed
+    return found
 
 
 def later_factor(rows, splits, date_col="date"):
@@ -249,6 +259,10 @@ def normalize(vendor, known_splits=None):
     px["_code"] = pkey // DAY
 
     found = detect_splits(px, actions)
+    if found.attrs.get("unconfirmed"):
+        u = found.attrs["unconfirmed"]
+        problems.append(dict(kind="factor step that is not a split", rows=len(u),
+                             securities=len({x[0] for x in u}), examples=[(a, b, round(c, 4)) for a, b, c in u[:20]]))
     if known_splits is not None and len(known_splits):
         # a batch can only see splits inside its own rows: keep the known splits outside each security's span
         span = px.groupby("security_id").date.agg(["min", "max"])
