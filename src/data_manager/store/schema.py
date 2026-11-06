@@ -8,7 +8,8 @@ from . import DEFAULT_STORE
 TABLES = {
     "securities": (["security_id"],
                    ["ticker", "name", "asset_class", "category", "exchange", "sector", "industry", "famaindustry",
-                    "sicsector", "sicindustry", "isdelisted", "first_price_date", "last_price_date", "cusips", "figi"]),
+                    "sicsector", "sicindustry", "isdelisted", "cusips", "figi"]),
+    # first and last price dates are not versioned: they follow from prices, and the last one moves every night
     "prices": (["security_id", "date"],
                ["open_traded", "high_traded", "low_traded", "close_traded", "volume_traded"]),
     "splits": (["security_id", "ex_date"], ["ratio", "how"]),
