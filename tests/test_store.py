@@ -295,3 +295,17 @@ def test_a_reverse_split_with_no_action_row_counts_when_the_price_jumps_most_of_
     a = pd.read_csv(files["actions"]); a[~((a.ticker == "BBB") & (a.action == "split"))].to_csv(files["actions"], index=False)
     sp = A.normalize(A.read_files(files))["splits"].set_index("security_id")
     assert sp.loc["102", "how"] == "factor" and sp.loc["102", "ratio"] == pytest.approx(1 / 16)
+
+
+def test_a_restated_share_count_without_precision_comes_from_marketcap(tmp_path, comps):
+    """After many reverse splits the vendor's restated count rounds to a few shares; its marketcap still knows."""
+    files = vendor(tmp_path, comps, 59)
+    fu = pd.read_csv(files["fundamentals"])
+    row = (fu.ticker == "CCC") & (fu.date == DAYS[10])
+    fu.loc[row, ["sharesbas", "shareswa"]] = 3.0                            # what's left after the vendor's rounding
+    fu.to_csv(files["fundamentals"], index=False)
+    facts = A.normalize(A.read_files(files))
+    sh = facts["shares"].set_index(["security_id", "filing_date"])
+    assert sh.loc[("103", DAYS[10]), "field"] == "marketcap/close"
+    assert sh.loc[("103", DAYS[10]), "shares_filed"] == pytest.approx(1e8, rel=1e-3)
+    assert sh.loc[("101", DAYS[10]), "field"] == "sharesbas"                # a precise count is used as it is
